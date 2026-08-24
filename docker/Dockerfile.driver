@@ -1,0 +1,20 @@
+FROM eclipse-temurin:21-jdk-jammy AS builder
+WORKDIR /app
+COPY pom.xml .
+COPY intellimove-common/pom.xml intellimove-common/
+COPY intellimove-driver/pom.xml intellimove-driver/
+RUN mvn dependency:go-offline -pl intellimove-driver -am 2>/dev/null || true
+COPY . .
+RUN mvn clean package -DskipTests -pl intellimove-driver -am
+
+FROM eclipse-temurin:21-jre-jammy
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+COPY --from=builder /app/intellimove-driver/target/*.jar app.jar
+RUN chown -R appuser:appuser /app
+USER appuser
+EXPOSE 8083
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD curl -sf http://localhost:8083/actuator/health || exit 1
+ENTRYPOINT ["java", "-jar", "app.jar"]

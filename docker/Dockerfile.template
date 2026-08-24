@@ -1,0 +1,19 @@
+# Multi-stage build for Spring Boot services
+FROM eclipse-temurin:21-jdk-jammy AS builder
+WORKDIR /app
+COPY pom.xml .
+COPY intellimove-common/pom.xml intellimove-common/
+RUN mvn dependency:go-offline -pl intellimove-common -am 2>/dev/null || true
+COPY . .
+RUN mvn clean package -DskipTests -pl SERVICE_MODULE -am
+
+FROM eclipse-temurin:21-jre-jammy
+WORKDIR /app
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+COPY --from=builder /app/SERVICE_MODULE/target/*.jar app.jar
+RUN chown -R appuser:appuser /app
+USER appuser
+EXPOSE PORT
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD curl -f http://localhost:PORT/actuator/health || exit 1
+ENTRYPOINT ["java", "-jar", "app.jar"]

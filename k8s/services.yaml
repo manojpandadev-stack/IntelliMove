@@ -1,0 +1,171 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: intellimove-auth
+  namespace: intellimove
+  labels:
+    app: intellimove-auth
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: intellimove-auth
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: intellimove-auth
+    spec:
+      containers:
+        - name: auth
+          image: intellimove/auth-service:latest
+          ports:
+            - containerPort: 8081
+          env:
+            - name: AUTH_SERVICE_PORT
+              value: "8081"
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: intellimove-config
+                  key: POSTGRES_HOST
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: intellimove-secrets
+                  key: POSTGRES_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: intellimove-secrets
+                  key: JWT_SECRET
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8081
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: intellimove-auth
+  namespace: intellimove
+spec:
+  selector:
+    app: intellimove-auth
+  ports:
+    - port: 8081
+      targetPort: 8081
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: intellimove-user
+  namespace: intellimove
+spec:
+  selector:
+    app: intellimove-user
+  ports:
+    - port: 8082
+      targetPort: 8082
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: intellimove-driver
+  namespace: intellimove
+spec:
+  selector:
+    app: intellimove-driver
+  ports:
+    - port: 8083
+      targetPort: 8083
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: intellimove-ride
+  namespace: intellimove
+spec:
+  selector:
+    app: intellimove-ride
+  ports:
+    - port: 8084
+      targetPort: 8084
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: intellimove-location
+  namespace: intellimove
+spec:
+  selector:
+    app: intellimove-location
+  ports:
+    - port: 8085
+      targetPort: 8085
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: intellimove-payment
+  namespace: intellimove
+spec:
+  selector:
+    app: intellimove-payment
+  ports:
+    - port: 8086
+      targetPort: 8086
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: intellimove-notification
+  namespace: intellimove
+spec:
+  selector:
+    app: intellimove-notification
+  ports:
+    - port: 8087
+      targetPort: 8087
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: intellimove-ai-ops
+  namespace: intellimove
+spec:
+  selector:
+    app: intellimove-ai-ops
+  ports:
+    - port: 8088
+      targetPort: 8088

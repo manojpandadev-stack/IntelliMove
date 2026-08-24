@@ -1,0 +1,91 @@
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# VS Code
+.vscode/
+
+# Maven
+target/
+*.jar
+*.war
+*.ear
+dependency-reduced-pom.xml
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# Gradle
+.gradle/
+build/
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+.pnp
+.pnp.js
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kubernetes secrets (never commit)
+k8s/secrets/*.yaml
+k8s/secrets/*.yml
+
+# Test
+*.test.js
+coverage/
+
+# Misc
+tmp/
+temp/
+*.swp
+*.swo
+*~
+
+# Generated / temp files in root
+*.log
+*.err.log
+nohup.out
+fe-build.log
+audit-info.txt
+audit-runtime.ps1
+files.txt
+props_list.txt
+
+# Docker data volumes (runtime only)
+postgres_data/
+redis_data/
+prometheus_data/
+grafana_data/
+
+# Ollama models
+*.gguf

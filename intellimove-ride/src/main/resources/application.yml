@@ -1,0 +1,60 @@
+server:
+  port: ${RIDE_SERVICE_PORT:8084}
+
+spring:
+  application:
+    name: intellimove-ride
+  mvc:
+    contentnegotiation:
+      media-types:
+        openmetrics: application/openmetrics-text; version=1.0.0
+  web:
+    resources:
+      add-mappings: false
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:intellimove}_ride
+    username: ${POSTGRES_USER:intellimove}
+    password: ${POSTGRES_PASSWORD:changeme_postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:localhost:9092}
+
+jwt:
+  secret: ${JWT_SECRET:changeme_jwt_secret_min_32_chars_long!!}
+  expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+  refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}
+
+pricing:
+  economy:
+    base-fare: 2.50
+    per-km: 1.20
+    per-minute: 0.25
+  comfort:
+    base-fare: 4.00
+    per-km: 1.80
+    per-minute: 0.35
+  premium:
+    base-fare: 6.00
+    per-km: 2.50
+    per-minute: 0.50
+  xl:
+    base-fare: 5.00
+    per-km: 2.00
+    per-minute: 0.40
+  demand-multiplier-default: 1.0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

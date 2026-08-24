@@ -1,0 +1,204 @@
+name: IntelliMove CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  JAVA_VERSION: '21'
+  NODE_VERSION: '20'
+
+jobs:
+  # ── Stage 1: Build & Unit Test Backend ──
+  backend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build and Unit Test
+        run: mvn clean test -DskipTests=false
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-unit-test-results
+          path: '**/target/surefire-reports/'
+
+  # ── Stage 2: Integration Tests with Testcontainers ──
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: [backend-build]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: intellimove
+          POSTGRES_USER: intellimove
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd redis-cli ping
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      kafka:
+        image: confluentinc/cp-kafka:7.6.0
+        env:
+          KAFKA_BROKER_ID: 1
+          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+          KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd kafka-topics --bootstrap-server localhost:9092 --list || exit 1
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Run Integration Tests
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: intellimove
+          POSTGRES_USER: intellimove
+          POSTGRES_PASSWORD: test_password
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          KAFKA_BROKERS: localhost:9092
+          JWT_SECRET: ci_test_jwt_secret_min_32_chars_long!!
+        run: mvn verify -DskipUnitTests -Dsurefire.failIfNoSpecifiedTests=false
+
+      - name: Upload Integration Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-integration-test-results
+          path: '**/target/failsafe-reports/'
+
+  # ── Stage 3: Build & Test Frontend ──
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Dependencies
+        run: cd frontend && npm ci
+
+      - name: Type Check
+        run: cd frontend && npx tsc --noEmit
+
+      - name: Build
+        run: cd frontend && npm run build
+
+  # ── Stage 4: Security Scan ──
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: [backend-build, frontend-build]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Dependency Vulnerability Check
+        run: mvn dependency:check -DskipTests || true
+        continue-on-error: true
+
+      - name: Secret Scan
+        run: |
+          echo "Checking for hardcoded secrets..."
+          ! grep -rn "sk_live\|sk_test\|AKIA[0-9A-Z]\{16\}" --include="*.java" --include="*.yml" --include="*.yaml" --include="*.properties" . || \
+            (echo "FOUND HARDCODED SECRETS" && exit 1)
+          echo "No hardcoded secrets found."
+
+  # ── Stage 5: Build Docker Images ──
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [backend-build, integration-tests, frontend-build, security-scan]
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        service:
+          - auth
+          - user
+          - driver
+          - ride
+          - location
+          - payment
+          - notification
+          - aiops
+          - gateway
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.service }}
+        run: |
+          docker build \
+            -f docker/Dockerfile.${{ matrix.service }} \
+            -t intellimove/${{ matrix.service }}:${{ github.sha }} \
+            -t intellimove/${{ matrix.service }}:latest .
+
+  # ── Stage 6: Build Frontend Image ──
+  docker-frontend:
+    runs-on: ubuntu-latest
+    needs: [frontend-build]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Frontend
+        run: docker build -t intellimove/frontend:${{ github.sha }} -t intellimove/frontend:latest ./frontend

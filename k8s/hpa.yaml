@@ -1,0 +1,72 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: intellimove-auth-hpa
+  namespace: intellimove
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: intellimove-auth
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: intellimove-gateway-hpa
+  namespace: intellimove
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: intellimove-gateway
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: intellimove-auth-pdb
+  namespace: intellimove
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: intellimove-auth
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: intellimove-gateway-pdb
+  namespace: intellimove
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: intellimove-gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: intellimove-ride-pdb
+  namespace: intellimove
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: intellimove-ride

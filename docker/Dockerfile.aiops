@@ -1,0 +1,20 @@
+FROM eclipse-temurin:21-jdk-jammy AS builder
+WORKDIR /app
+COPY pom.xml .
+COPY intellimove-common/pom.xml intellimove-common/
+COPY intellimove-ai-ops/pom.xml intellimove-ai-ops/
+RUN mvn dependency:go-offline -pl intellimove-ai-ops -am 2>/dev/null || true
+COPY . .
+RUN mvn clean package -DskipTests -pl intellimove-ai-ops -am
+
+FROM eclipse-temurin:21-jre-jammy
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+COPY --from=builder /app/intellimove-ai-ops/target/*.jar app.jar
+RUN chown -R appuser:appuser /app
+USER appuser
+EXPOSE 8088
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD curl -sf http://localhost:8088/actuator/health || exit 1
+ENTRYPOINT ["java", "-jar", "app.jar"]

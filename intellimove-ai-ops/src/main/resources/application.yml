@@ -1,0 +1,57 @@
+server:
+  port: ${AI_OPS_SERVICE_PORT:8088}
+
+spring:
+  mvc:
+    contentnegotiation:
+      media-types:
+        openmetrics: application/openmetrics-text; version=1.0.0
+  web:
+    resources:
+      add-mappings: false
+  application:
+    name: intellimove-ai-ops
+  profiles:
+    active: ${AI_PROVIDER:openai-compatible}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        model: ${OLLAMA_MODEL:qwen3:8b}
+        options:
+          temperature: 0.7
+    openai:
+      api-key: ${SPRING_AI_API_KEY:ollama}
+      base-url: ${SPRING_AI_BASE_URL:http://localhost:11434}
+      chat:
+        options:
+          model: ${OPENAI_MODEL:qwen3:8b}
+          temperature: 0.7
+
+jwt:
+  secret: ${JWT_SECRET:changeme_jwt_secret_min_32_chars_long!!}
+  expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+  refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}
+
+ai:
+  ops:
+    provider: ${AI_PROVIDER:openai-compatible}
+    system-prompt: |
+      You are IntelliMove's AI Operations Assistant. You help administrators analyze
+      operational data and provide insights. You have access to tools that retrieve
+      specific metrics and statistics. Always base your analysis on data returned by
+      tools. Never fabricate data. Provide clear, actionable insights.
+    timeout-seconds: 120
+    max-conversation-history: 20
+    llm-enabled: ${LLM_ENABLED:true}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
