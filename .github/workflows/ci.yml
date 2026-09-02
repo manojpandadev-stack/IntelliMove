@@ -71,7 +71,7 @@ jobs:
         ports:
           - 6379:6379
         options: >-
-          --health-cmd redis-cli ping
+          --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -87,7 +87,7 @@ jobs:
         ports:
           - 9092:9092
         options: >-
-          --health-cmd kafka-topics --bootstrap-server localhost:9092 --list || exit 1
+          --health-cmd "kafka-topics --bootstrap-server localhost:9092 --list"
           --health-interval 10s
           --health-timeout 10s
           --health-retries 10
@@ -166,7 +166,7 @@ jobs:
       - name: Secret Scan
         run: |
           echo "Checking for hardcoded secrets..."
-          ! grep -rn "sk_live\|sk_test\|AKIA[0-9A-Z]\{16\}" --include="*.java" --include="*.yml" --include="*.yaml" --include="*.properties" . || \
+          ! grep -rnE 'sk_(live|test)|AKIA[0-9A-Z]{16}' --include="*.java" --include="*.yml" --include="*.yaml" --include="*.properties" . || \
             (echo "FOUND HARDCODED SECRETS" && exit 1)
           echo "No hardcoded secrets found."
 
