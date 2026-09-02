@@ -254,7 +254,11 @@ class RideServiceTestcontainersTest {
     void testPaginationPostgreSQL() {
         UUID customer = UUID.randomUUID();
         for (int i = 0; i < 5; i++) {
-            rideService.requestRide(customer, createDefaultRequest());
+            RideResponse ride = rideService.requestRide(customer, createDefaultRequest());
+            rideService.assignDriver(ride.getId(), driverId);
+            rideService.driverAccept(ride.getId(), driverId);
+            rideService.startTrip(ride.getId(), driverId);
+            rideService.completeTrip(ride.getId(), driverId);
         }
 
         var page1 = rideService.getCustomerRides(customer, 0, 2);
