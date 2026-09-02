@@ -4,10 +4,12 @@
 
 | Suite | Pass | Fail | Skip | Total |
 |-------|------|------|------|-------|
-| Java unit/integration | 88 | 0 | 25 | 113 |
-| Playwright browser E2E | 23 | 0 | 0 | 23 |
-| Shell E2E | 35 | 0 | 0 | 35 |
-| **TOTAL** | **146** | **0** | **25** | **171** |
+| Java unit/integration (incl. Testcontainers) | ~222 methods | 0 | 0 in CI (Testcontainers run against real containers) | ~222 |
+| Playwright browser E2E | 48 | 0 | 0 | 48 |
+| Shell E2E | 26 | 0 | 0 | 26 |
+| **TOTAL** | **~296** | **0** | **0** | **~296** |
+
+Full suite is green on GitHub Actions (backend-build + integration-tests jobs). Locally without Docker, Testcontainers tests self-skip.
 
 ## Running Tests
 
@@ -52,9 +54,7 @@ bash e2e-test.sh
 
 Tests use `@Testcontainers(disabledWithoutDocker = true)` to skip gracefully when Docker is unavailable.
 
-**Blocker**: Windows Docker Desktop named pipe not accessible from Java Testcontainers.
-
-**Resolution**: Run on Linux CI/CD where Docker is natively accessible.
+**Status**: Running green in CI — the GitHub Actions `backend-build`/`integration-tests` jobs provide real PostgreSQL, Redis, and Kafka (with ZooKeeper) service containers, so the Testcontainers suites execute fully there.
 
 Tests cover:
 - PostgreSQL: Flyway migrations, repository CRUD, transactions, constraints
@@ -63,35 +63,25 @@ Tests cover:
 
 ### Playwright Browser E2E
 
-| Test | Role | Flow |
-|------|------|------|
-| Customer registration | CUSTOMER | Register → redirect to login |
-| Customer login | CUSTOMER | Login → dashboard |
-| Customer dashboard | CUSTOMER | Dashboard loads with correct content |
-| Customer request ride | CUSTOMER | Request ride form works |
-| Customer ride history | CUSTOMER | History page loads |
-| Customer invalid login | CUSTOMER | Error message shown |
-| Driver registration | DRIVER | Register → redirect |
-| Driver login | DRIVER | Login → dashboard |
-| Driver dashboard | DRIVER | Dashboard loads |
-| Driver vehicle info | DRIVER | Vehicle form works |
-| Driver go online | DRIVER | Status change works |
-| Admin login | ADMIN | Login → dashboard |
-| Admin dashboard | ADMIN | Dashboard loads with tabs |
-| Admin users tab | ADMIN | User list loads |
-| Admin drivers tab | ADMIN | Driver list loads |
-| Admin rides tab | ADMIN | Ride list loads |
-| Admin payments tab | ADMIN | Payment list loads |
-| Navigation protection | ALL | Unauthorized redirect works |
-| JWT token handling | ALL | Token storage/clear works |
-| Role-based routing | ALL | Correct redirects per role |
-| API error handling | ALL | Error states shown |
-| Loading states | ALL | Loading indicators work |
-| Responsive layout | ALL | Mobile/desktop layout |
+48 tests across 9 spec files:
+
+| Spec file | Area |
+|-----------|------|
+| app.spec.ts | Booking panel, ride options rendering, request-a-ride flow |
+| ride-request.spec.ts | Customer ride request with category selection |
+| ride-lifecycle.spec.ts | Full ride lifecycle through driver completion |
+| driver-request.spec.ts | Driver accept/reject flows |
+| rider-driver-location.spec.ts | Live driver location / ETA UI |
+| rider-responsive.spec.ts | Mobile/tablet/desktop booking layouts |
+| rider-profile-photo.spec.ts | Profile & photo management |
+| input-visibility.spec.ts | Form input visibility/interaction |
+| global-setup.ts (helper) | Cross-spec test isolation & cleanup |
+
+Coverage includes: registration/login for all roles, ride category selection with fare estimates, ride lifecycle, driver state machine, role-based route protection, JWT handling, error/loading states, and responsive layouts.
 
 ### Shell E2E
 
-35 tests covering:
+26 checks covering:
 - Health checks for all 9 services
 - Auth: register, login, token refresh
 - Driver: register, update status, location

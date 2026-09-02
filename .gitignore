@@ -102,4 +102,6 @@ shots/
 # Kubernetes secrets — also the single-file form at k8s/secrets.yaml (never commit)
 k8s/secrets*.yaml
 k8s/secrets*.yml
+# Freebuff / AI-agent generated project metadata (never commit)
+.freebuff/
 

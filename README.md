@@ -1,6 +1,8 @@
 # IntelliMove — Enterprise Intelligent Mobility & Delivery Platform
 
-A production-quality Uber-style ride-hailing platform built with Java 21, Spring Boot 3, React, and microservices architecture.
+[![CI/CD](https://github.com/manojpandadev-stack/IntelliMove/actions/workflows/ci.yml/badge.svg)](https://github.com/manojpandadev-stack/IntelliMove/actions/workflows/ci.yml)
+
+A full-stack Uber-style ride-hailing platform built with Java 21, Spring Boot 3, React, and a microservices architecture.
 
 ## Architecture
 
@@ -26,10 +28,10 @@ A production-quality Uber-style ride-hailing platform built with Java 21, Spring
                     │  (Event Bus)      │
                     └─────────┬─────────┘
                               │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-        PostgreSQL         Redis        Elasticsearch
-      (Per Service)    (GEO, Cache)    (Operational Search)
+              ┌───────────────┴───────────────┐
+              ▼                               ▼
+        PostgreSQL                        Redis
+      (Per Service)            (GEO, Cache, Token Blacklist)
 ```
 
 ## Technology Stack
@@ -38,12 +40,11 @@ A production-quality Uber-style ride-hailing platform built with Java 21, Spring
 |-------|-----------|
 | **Backend** | Java 21, Spring Boot 3.3, Spring Security, Spring Data JPA, Spring Cloud Gateway |
 | **Messaging** | Apache Kafka with outbox pattern |
-| **Databases** | PostgreSQL (per-service), Redis (GEO/location), Elasticsearch |
+| **Databases** | PostgreSQL (per-service), Redis (GEO/location, cache, token blacklist) |
 | **Frontend** | React 19, TypeScript, Vite, Tailwind CSS, React Query |
-| **AI** | Spring AI with tool-calling architecture |
-| **Infrastructure** | Docker, Docker Compose, Kubernetes, GitHub Actions |
+| **AI** | Spring AI with tool-calling architecture (keyword routing by default) |
+| **Infrastructure** | Docker, Docker Compose, GitHub Actions, Kubernetes (reference manifests) |
 | **Observability** | Spring Boot Actuator, Prometheus, Grafana |
-| **Resilience** | Resilience4j (circuit breaker, retry, timeout) |
 
 ## Microservices
 
@@ -90,6 +91,11 @@ Multi-factor scoring:
 
 Distributed locking via Redis prevents race conditions.
 
+### Real-Time Driver Location & ETA
+- WebSocket endpoint streams live driver GPS positions to the frontend map.
+- Redis GEO stores driver locations and powers proximity-based driver matching.
+- Pickup ETA is computed from the haversine distance to the nearest driver and the configured urban driving-speed assumption (`location.eta.speed-kmh`), exposed via `GET /api/v1/rides/eta`.
+
 ### AI Operations Assistant
 Controlled tool-calling architecture:
 - `getRideStatistics()` — ride metrics
@@ -110,7 +116,7 @@ Controlled tool-calling architecture:
 
 ### 1. Start Infrastructure
 ```bash
-docker compose up -d postgres redis kafka zookeeper elasticsearch
+docker compose up -d postgres redis kafka zookeeper prometheus grafana
 ```
 
 ### 2. Build Backend
@@ -199,9 +205,11 @@ curl -X POST http://localhost:8080/api/v1/ai/ops/query \
 
 ## Testing
 
-### Unit Tests
+~222 backend test methods across the 9 services, plus 48 Playwright browser E2E tests and 26 shell-based API E2E checks. The full suite runs green in GitHub Actions.
+
+### Unit & Integration Tests
 ```bash
-# Run all tests
+# Run all tests (Testcontainers tests require Docker and run in CI)
 mvn test
 
 # Run specific module tests
@@ -210,12 +218,21 @@ mvn test -pl intellimove-driver
 mvn test -pl intellimove-payment
 ```
 
-### E2E Tests
+Testcontainers suites (`RideServiceTestcontainersTest`, `DriverLocationTestcontainersTest`, matching concurrency ITs) run against real PostgreSQL, Redis, and Kafka containers in CI, covering Flyway migrations, repository behavior, Redis GEO search, distributed locks, and Kafka producer/consumer flows. They self-skip when Docker is unavailable.
+
+### Browser E2E (Playwright)
+```bash
+cd frontend && npx playwright install --with-deps
+cd frontend && npx playwright test
+```
+48 tests in 9 specs covering customer/driver/admin flows: registration, login, ride request with category selection, full ride lifecycle, driver accept/reject, live location/ETA UI, profile & saved places, responsive/mobile layouts, and role-based route protection.
+
+### Shell API E2E
 ```bash
 # Requires all services running locally on their default ports
 bash e2e-test.sh
 
-# Expected output: 32 passed, 0 failed
+# Expected output: all checks pass (0 failures)
 ```
 
 The E2E test covers:
@@ -243,26 +260,32 @@ cd frontend && npm run build
 
 ## Kubernetes Deployment
 
+> **Status:** Kubernetes manifests are provided and structurally validated for reference
+> purposes. IntelliMove has **not** been deployed to a live Kubernetes cluster, and no
+> container images have been pushed to a registry.
+
 ```bash
-# Create namespace and secrets
+# Create namespace, then create secrets from the .env.example template
+# (k8s/secrets.yaml is intentionally not committed — generate it locally first)
 kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/secrets.yaml
+kubectl create secret generic intellimove-secrets --from-env-file=.env.example -n intellimove
 kubectl apply -f k8s/configmap.yaml
 
-# Deploy services
+# Deploy services (see docs/DEPLOYMENT.md for the full manifest set)
 kubectl apply -f k8s/gateway.yaml
 kubectl apply -f k8s/auth-service.yaml
-# (similar for other services)
+kubectl apply -f k8s/services.yaml
+kubectl apply -f k8s/hpa.yaml
 ```
 
 ## CI/CD
 
 GitHub Actions pipeline (`.github/workflows/ci.yml`):
-1. **Backend Build** — Compile, test, verify
-2. **Frontend Build** — Install, type-check, build
-3. **Security Scan** — Dependency check
-4. **Docker Build** — Multi-service matrix build
-5. **Deploy** — On merge to main
+1. **Backend Build** — Compile and run unit tests (JDK 21)
+2. **Integration Tests** — Postgres/Redis/Kafka services on Linux for integration suite
+3. **Frontend Build** — Install, type-check, build
+4. **Security Scan** — Dependency vulnerability check + hardcoded-secret grep
+5. **Docker Build** — Builds all 9 service images + frontend image on merge to main (no registry push / no deploy)
 
 ## Monitoring
 
@@ -287,6 +310,7 @@ Each service has its own database with Flyway migrations:
 | `payment-events` | PAYMENT_INITIATED, PAYMENT_COMPLETED, PAYMENT_FAILED, REFUND_INITIATED |
 | `notification-events` | NOTIFICATION_REQUESTED (for all notification types) |
 | `driver-events` | DRIVER_STATUS_CHANGED |
+| `user-events` | USER_REGISTERED |
 
 ## Security
 
@@ -298,6 +322,58 @@ Each service has its own database with Flyway migrations:
 - Input validation on all endpoints
 - Centralized exception handling (no stack traces exposed)
 - Rate limiting on auth endpoints
+
+## Current Status & Limitations
+
+**Deployment**
+- Fully functional in local development via Docker Compose + `mvn`/`npm` (see
+  [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)). Not deployed to any public cloud or
+  production environment. Kubernetes manifests are provided but **not** deployed to a
+  live cluster; no container images are published to a registry.
+
+**Payments**
+- Payment service uses a **sandbox provider** (simulated success/failure) with a pluggable
+  `PaymentProvider` interface and idempotency. No production Stripe/Adyen/Square integration
+  is configured — a real provider requires API credentials (see
+  [docs/PAYMENT_PRODUCTION.md](docs/PAYMENT_PRODUCTION.md)).
+
+**AI Operations**
+- Runs in **keyword-routing mode by default** (no LLM required). An LLM provider
+  (Ollama or an OpenAI-compatible API) is optional and disabled unless `LLM_ENABLED=true`
+  (see [docs/AI_PRODUCTION.md](docs/AI_PRODUCTION.md)).
+
+**Notifications**
+- In-app notifications are implemented and verified. Email (SMTP) is configurable but
+  requires credentials (see [docs/NOTIFICATION_PRODUCTION.md](docs/NOTIFICATION_PRODUCTION.md)).
+
+**Resilience**
+- Resilience4j is declared as a shared dependency but circuit-breaker/retry annotations are
+  not yet wired into the application.
+
+**Search**
+- Elasticsearch is **not** part of the runtime stack; it only appears as an unused
+  Testcontainers artifact in the parent POM.
+
+## Repository Structure
+
+```
+IntelliMove/
+├── intellimove-common/       # Shared events, outbox, DTOs, exception handling
+├── intellimove-auth/         # JWT auth, refresh, revocation (Redis blacklist)
+├── intellimove-user/         # Profiles, saved places, preferences, provisioning
+├── intellimove-driver/       # Driver profile, vehicle, state machine
+├── intellimove-ride/         # Ride lifecycle, pricing engine, fare estimation
+├── intellimove-location/     # Redis GEO, matching, WebSocket, live ETA
+├── intellimove-payment/      # Sandbox payment provider, saga, idempotency
+├── intellimove-notification/ # In-app notifications via Kafka consumers
+├── intellimove-ai-ops/       # AI support assistant (pluggable LLM provider)
+├── intellimove-gateway/      # Spring Cloud Gateway + JWT filter
+├── frontend/                 # React 19 + TypeScript + Vite + Playwright
+├── docker/                   # Per-service Dockerfiles (Maven builder + JRE runtime)
+├── k8s/                      # Kubernetes manifests (reference, not deployed)
+├── monitoring/               # Prometheus config + Grafana provisioning
+└── .github/workflows/        # CI/CD pipeline
+```
 
 ## License
 

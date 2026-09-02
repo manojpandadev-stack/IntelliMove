@@ -2,7 +2,7 @@
 
 ## Final Status: ~96% Complete
 
-Last verified: 2026-08-24
+Last verified: 2026-09-02 (CI-green: commit ac3a338, all 14 GitHub Actions jobs passed)
 
 ## Service Status
 
@@ -32,10 +32,12 @@ Last verified: 2026-08-24
 
 | Suite | Pass | Fail | Skip | Total |
 |-------|------|------|------|-------|
-| Java unit/integration | 88 | 0 | 25 | 113 |
-| Playwright browser E2E | 23 | 0 | 0 | 23 |
-| Shell E2E | 35 | 0 | 0 | 35 |
-| **TOTAL** | **146** | **0** | **25** | **171** |
+| Java unit/integration (incl. Testcontainers) | ~222 methods | 0 | 0 in CI | ~222 |
+| Playwright browser E2E | 48 | 0 | 0 | 48 |
+| Shell E2E | 26 | 0 | 0 | 26 |
+| **TOTAL** | **~296** | **0** | **0** | **~296** |
+
+Full suite green on GitHub Actions (`mvn clean test -DskipTests=false` with real Redis; integration-tests job with real PostgreSQL/Redis/Kafka). Locally without Docker, Testcontainers tests self-skip.
 
 ## Feature Verification Matrix
 
@@ -65,9 +67,9 @@ Last verified: 2026-08-24
 | Prometheus | ✅ | ✅ | ✅ | — | COMPLETE |
 | Grafana | ✅ | ✅ | ✅ | — | COMPLETE |
 | Docker images | ✅ | ✅ | ✅ | — | COMPLETE |
-| Testcontainers | ✅ | ✅ | ⚠️ | — | ENV BLOCKED |
-| Kubernetes | ✅ | ✅ | ⚠️ | — | ENV BLOCKED |
-| CI/CD | ✅ | ✅ | ⚠️ | — | ENV BLOCKED |
+| Testcontainers | ✅ | ✅ | ✅ | — | COMPLETE (runs in CI with real containers) |
+| Kubernetes | ✅ | ✅ | ⚠️ | — | ENV BLOCKED (manifests validated, no live cluster) |
+| CI/CD | ✅ | ✅ | ✅ | — | COMPLETE (GitHub Actions 14/14 jobs green on main) |
 | Git repository | ✅ | — | ✅ | — | COMPLETE |
 | Secret scan | ✅ | ✅ | ✅ | — | COMPLETE |
 | SMTP | ✅ | — | ⚠️ | — | CREDENTIAL BLOCKED |
