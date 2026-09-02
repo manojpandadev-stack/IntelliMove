@@ -3,12 +3,15 @@ package com.intellimove.ride.service;
 import com.intellimove.common.dto.PagedResponse;
 import com.intellimove.common.enums.DomainEventType;
 import com.intellimove.common.enums.RideStatus;
+import com.intellimove.common.enums.RideType;
 import com.intellimove.common.event.*;
 import com.intellimove.common.exception.InvalidStateTransitionException;
 import com.intellimove.common.exception.ResourceNotFoundException;
 import com.intellimove.common.outbox.OutboxService;
 import com.intellimove.ride.dto.CancelRideRequest;
 import com.intellimove.ride.dto.CreateRideRequest;
+import com.intellimove.ride.dto.FareEstimateResponse;
+import com.intellimove.ride.dto.RideEtaContext;
 import com.intellimove.ride.dto.RideResponse;
 import com.intellimove.ride.entity.Ride;
 import com.intellimove.ride.mapper.RideMapper;
@@ -30,9 +33,9 @@ import java.util.*;
  * Ride lifecycle management with enforced state machine.
  *
  * Valid transitions:
- *   REQUESTED       -> MATCHING, CANCELLED
+ *   REQUESTED       -> MATCHING, DRIVER_ASSIGNED, CANCELLED
  *   MATCHING        -> DRIVER_ASSIGNED, CANCELLED
- *   DRIVER_ASSIGNED -> DRIVER_ACCEPTED, CANCELLED
+ *   DRIVER_ASSIGNED -> DRIVER_ACCEPTED, REQUESTED (driver rejected), CANCELLED
  *   DRIVER_ACCEPTED -> DRIVER_ARRIVING, CANCELLED
  *   DRIVER_ARRIVING -> TRIP_STARTED
  *   TRIP_STARTED    -> TRIP_COMPLETED
@@ -52,13 +55,56 @@ public class RideService {
     private static final Map<RideStatus, Set<RideStatus>> VALID_TRANSITIONS = Map.of(
             RideStatus.REQUESTED, Set.of(RideStatus.MATCHING, RideStatus.DRIVER_ASSIGNED, RideStatus.CANCELLED),
             RideStatus.MATCHING, Set.of(RideStatus.DRIVER_ASSIGNED, RideStatus.CANCELLED),
-            RideStatus.DRIVER_ASSIGNED, Set.of(RideStatus.DRIVER_ACCEPTED, RideStatus.CANCELLED),
+            RideStatus.DRIVER_ASSIGNED, Set.of(RideStatus.DRIVER_ACCEPTED, RideStatus.REQUESTED, RideStatus.CANCELLED),
             RideStatus.DRIVER_ACCEPTED, Set.of(RideStatus.DRIVER_ARRIVING, RideStatus.TRIP_STARTED, RideStatus.CANCELLED),
             RideStatus.DRIVER_ARRIVING, Set.of(RideStatus.TRIP_STARTED),
             RideStatus.TRIP_STARTED, Set.of(RideStatus.TRIP_COMPLETED),
             RideStatus.TRIP_COMPLETED, Set.of(),
             RideStatus.CANCELLED, Set.of()
     );
+
+    /**
+     * Fare preview for the booking UI. Uses the exact same pricing engine as
+     * ride creation so the displayed estimate matches the stored estimatedFare.
+     */
+    @Transactional(readOnly = true)
+    public FareEstimateResponse estimateFare(double pickupLat, double pickupLng,
+                                             double dropoffLat, double dropoffLng) {
+        double distanceKm = pricingService.haversineDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
+        long minutes = (long) (distanceKm / 0.5); // same avg-speed assumption as PricingService
+        List<FareEstimateResponse.RideOptionEstimate> options = new ArrayList<>();
+        for (RideType type : List.of(RideType.ECONOMY, RideType.COMFORT, RideType.PREMIUM, RideType.XL)) {
+            options.add(FareEstimateResponse.RideOptionEstimate.builder()
+                    .rideType(type)
+                    .estimatedFare(pricingService.calculateEstimate(pickupLat, pickupLng, dropoffLat, dropoffLng, type))
+                    .etaMinutes(minutes)
+                    .capacity(type == RideType.XL ? 6 : 4)
+                    .description(describeRideType(type))
+                    .surgeMultiplier(pricingService.getDemandMultiplier())
+                    .build());
+        }
+        return FareEstimateResponse.builder()
+                .distanceKm(Math.round(distanceKm * 10.0) / 10.0)
+                .estimatedMinutes(minutes)
+                .currency("USD")
+                .options(options)
+                .build();
+    }
+
+    /**
+     * Deterministic per-category description shown in the booking UI.
+     * Mirrors the wording already used by the rider dashboard so the API and
+     * the frontend stay consistent. Purely presentational metadata.
+     */
+    private static String describeRideType(RideType rideType) {
+        return switch (rideType) {
+            case ECONOMY -> "Affordable everyday rides";
+            case COMFORT -> "Newer cars, extra legroom";
+            case PREMIUM -> "Top-rated drivers, luxury cars";
+            case XL -> "Room for larger groups";
+            case DELIVERY -> "Package and food deliveries";
+        };
+    }
 
     @Transactional
     public RideResponse requestRide(UUID customerId, CreateRideRequest request) {
@@ -207,6 +253,48 @@ public class RideService {
         return rideMapper.toResponse(ride);
     }
 
+    /**
+     * Assigned driver rejects an incoming ride request. The ride is NOT
+     * cancelled: it returns to REQUESTED with the assignment cleared so the
+     * matching system can select another eligible driver (Uber-style
+     * reassignment). Only the currently assigned driver may reject.
+     */
+    @Transactional
+    public RideResponse driverReject(UUID rideId, UUID driverId) {
+        Ride ride = rideRepository.findById(rideId)
+                .orElseThrow(() -> new ResourceNotFoundException("Ride", "id", rideId));
+
+        if (ride.getDriverId() == null || !ride.getDriverId().equals(driverId)) {
+            throw new com.intellimove.common.exception.BusinessException(
+                    "NOT_ASSIGNED", "Driver is not assigned to this ride");
+        }
+
+        validateTransition(ride.getStatus(), RideStatus.REQUESTED);
+
+        ride.setStatus(RideStatus.REQUESTED);
+        ride.setDriverId(null);
+        ride.setDriverAssignedAt(null);
+        ride = rideRepository.save(ride);
+
+        outboxService.saveEvent(
+                DriverRejectedEvent.builder()
+                        .eventType(DomainEventType.DRIVER_REJECTED.name())
+                        .rideId(rideId.toString())
+                        .driverId(driverId.toString())
+                        .customerId(ride.getCustomerId().toString())
+                        .pickupLatitude(ride.getPickupLatitude())
+                        .pickupLongitude(ride.getPickupLongitude())
+                        .rideType(ride.getRideType() != null ? ride.getRideType().name() : null)
+                        .correlationId(rideId.toString())
+                        .build(),
+                "Ride", rideId.toString(),
+                "ride-events", rideId.toString());
+
+        log.info("Driver rejected ride request: rideId={}, driverId={} — ride returned to REQUESTED for reassignment",
+                rideId, driverId);
+        return rideMapper.toResponse(ride);
+    }
+
     @Transactional
     public RideResponse startTrip(UUID rideId, UUID driverId) {
         Ride ride = rideRepository.findById(rideId)
@@ -294,6 +382,19 @@ public class RideService {
         return rideMapper.toResponse(ride);
     }
 
+    /**
+     * Minimal, read-only ride context for the Location Service's live pickup
+     * ETA feature. Throws {@link ResourceNotFoundException} when the ride does
+     * not exist (mapped to HTTP 404 by the controller).
+     */
+    @Transactional(readOnly = true)
+    public RideEtaContext getEtaContext(UUID rideId) {
+        Ride ride = rideRepository.findById(rideId)
+                .orElseThrow(() -> new ResourceNotFoundException("Ride", "id", rideId));
+        return new RideEtaContext(ride.getDriverId(), ride.getPickupLatitude(),
+                ride.getPickupLongitude(), ride.getStatus());
+    }
+
     @Transactional(readOnly = true)
     public PagedResponse<RideResponse> getCustomerRides(UUID customerId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
@@ -332,6 +433,20 @@ public class RideService {
         return rideRepository.findById(rideId)
                 .map(ride -> userId.equals(ride.getCustomerId())
                         || userId.equals(ride.getDriverId()))
+                .orElse(false);
+    }
+
+    /**
+     * True when the ride can still accept a driver assignment through its
+     * state machine (REQUESTED or MATCHING). Used by the Location Service's
+     * matching consumer to skip stale RIDE_REQUESTED events instantly.
+     */
+    @Transactional(readOnly = true)
+    public boolean isAssignable(UUID rideId) {
+        if (rideId == null) return false;
+        return rideRepository.findById(rideId)
+                .map(ride -> VALID_TRANSITIONS.getOrDefault(ride.getStatus(), Set.of())
+                        .contains(RideStatus.DRIVER_ASSIGNED))
                 .orElse(false);
     }
 

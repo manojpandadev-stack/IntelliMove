@@ -66,8 +66,8 @@ test.describe('Authentication', () => {
     await page.click('button[type="submit"]');
     await expect(page).not.toHaveURL(/\/login|\/register/, { timeout: 10_000 });
 
-    // Logout
-    await page.click('button:has-text("Logout")');
+    // Logout (desktop header uses an icon-only button with an aria-label)
+    await page.click('[aria-label="Log out"]');
     await expect(page).toHaveURL(/\/login/);
 
     // Login again
@@ -110,41 +110,105 @@ test.describe('Customer Dashboard', () => {
     await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
   });
 
-  test('customer dashboard shows ride request form', async ({ page }) => {
-    await expect(page.locator('text=Request a Ride')).toBeVisible();
-    await expect(page.locator('select')).toBeVisible();
-    await expect(page.locator('button:has-text("Request Ride")')).toBeVisible();
+  test('customer dashboard shows booking panel with ride options and request button', async ({ page }) => {
+    await expect(page.locator('text=Where are you going today?')).toBeVisible();
+    await expect(page.locator('[data-testid="booking-panel"]')).toBeVisible();
+    await expect(page.locator('[data-testid="location-input-map-pin"]')).toBeVisible();
+    await expect(page.locator('[data-testid="location-input-flag"]')).toBeVisible();
+    await expect(page.locator('[data-testid="request-ride"]')).toBeDisabled(); // disabled until both locations chosen
   });
 
-  test('customer dashboard shows ride history section', async ({ page }) => {
-    await expect(page.locator('text=Ride History')).toBeVisible();
+  test('customer dashboard shows recent rides section', async ({ page }) => {
+    await expect(page.locator('text=Recent rides')).toBeVisible();
   });
 
-  test('customer dashboard shows nav bar with user name', async ({ page }) => {
-    await expect(page.locator('nav h1')).toContainText('IntelliMove');
-    await expect(page.locator('nav span')).toContainText('Dash');
+  test('customer dashboard header shows brand and user name', async ({ page }) => {
+    await expect(page.locator('header')).toContainText('IntelliMove');
+    await expect(page.locator('header span', { hasText: 'Dash Test' })).toBeVisible();
   });
 
-  test('customer dashboard ride request form has ride type selector', async ({ page }) => {
-    const select = page.locator('select');
-    await expect(select).toBeVisible();
-    await expect(select.locator('option')).toHaveCount(4);
+  test('customer sees four real ride options after choosing locations', async ({ page }) => {
+    // Mock only the external geocoding service (Nominatim); all app APIs stay real.
+    await mockGeocode(page);
+    await pickLocation(page, 'map-pin', 'Brooklyn Ave, NY');
+    await pickLocation(page, 'flag', 'Manhattan, NY');
+    for (const type of ['ECONOMY', 'COMFORT', 'PREMIUM', 'XL']) {
+      await expect(page.locator(`[data-testid="option-${type}"]`)).toBeVisible({ timeout: 10_000 });
+    }
   });
 
-  test('customer can request a ride and get confirmation', async ({ page }) => {
-    page.on('dialog', async (dialog) => {
-      expect(dialog.message()).toContain('Ride requested');
-      await dialog.accept();
+  test('customer can request a ride and see it confirmed in the UI', async ({ page }) => {
+    await mockGeocode(page);
+    await pickLocation(page, 'map-pin', 'Brooklyn Ave, NY');
+    await pickLocation(page, 'flag', 'Manhattan, NY');
+    await page.locator('[data-testid="option-ECONOMY"]').click();
+    await page.locator('[data-testid="request-ride"]').click();
+
+    // Active ride card appears with a live status — never a generic failure.
+    await expect(page.locator('[data-testid="active-ride-card"]')).toBeVisible({ timeout: 20_000 });
+    const badge = page.locator('[data-testid="active-ride-card"] .im-badge');
+    await expect(badge).toHaveText(/requested|driver_assigned/i, { timeout: 20_000 });
+    await expect(page.getByText('Failed to request ride')).toHaveCount(0);
+
+    // Cleanup — cancel the ride this test just booked. Its mocked pickup
+    // (40.7128,-74.006) overlaps other specs' driver GPS; if left REQUESTED,
+    // the Kafka auto-dispatch consumer assigns it to their online drivers and
+    // corrupts their runs. See docs/POST_RELEASE_AUDIT.md section 7.
+    const loginRes = await fetch(`${API}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: customerEmail, password: 'password12345' }),
     });
-    await page.click('button:has-text("Request Ride")');
-    await page.waitForTimeout(3_000);
+    const loginData = (await loginRes.json()).data;
+    const token = loginData.accessToken as string;
+    const customerId = (loginData.user?.id ?? loginData.userId) as string;
+    const ridesRes = await fetch(`http://localhost:8080/api/v1/rides/customer/${customerId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const rides = (await ridesRes.json()).data?.content ?? [];
+    for (const ride of rides) {
+      if (
+        ['REQUESTED', 'DRIVER_ASSIGNED', 'DRIVER_ACCEPTED', 'DRIVER_ARRIVING', 'IN_PROGRESS']
+          .includes(ride.status)
+      ) {
+        await fetch(`http://localhost:8080/api/v1/rides/${ride.id}/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ reason: 'RIDER_CANCELLED', note: 'e2e-app-spec cleanup' }),
+        });
+      }
+    }
   });
 
   test('customer dashboard logout works', async ({ page }) => {
-    await page.click('button:has-text("Logout")');
+    await page.click('[aria-label="Log out"]');
     await expect(page).toHaveURL(/\/login/);
   });
 });
+
+// ─── Customer Dashboard helpers ──────────────────────────────────────
+/**
+ * Intercepts ONLY the external Nominatim geocoding calls so tests are
+ * deterministic and offline-safe. Every IntelliMove backend API remains real.
+ */
+async function mockGeocode(page: import('@playwright/test').Page) {
+  await page.route('**/geocode/search**', async (route) => {
+    const url = new URL(route.request().url());
+    const q = url.searchParams.get('q') ?? '';
+    const hits = q.toLowerCase().includes('manhattan')
+      ? [{ lat: '40.7580', lon: '-73.9855', display_name: 'Manhattan, NY' }]
+      : [{ lat: '40.7128', lon: '-74.0060', display_name: 'Brooklyn Ave, NY' }];
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(hits) });
+  });
+}
+
+/** Types into a LocationPicker and selects the first geocoded suggestion. */
+async function pickLocation(page: import('@playwright/test').Page, icon: string, text: string) {
+  const input = page.locator(`[data-testid="location-input-${icon}"]`);
+  await input.click();
+  await input.fill(text);
+  await page.locator('[role="option"]', { hasText: text }).first().click();
+}
 
 // ─── Driver Dashboard ────────────────────────────────────────────────
 test.describe('Driver Dashboard', () => {
@@ -210,7 +274,7 @@ test.describe('Driver Dashboard', () => {
   });
 
   test('driver logout works', async ({ page }) => {
-    await page.click('button:has-text("Logout")');
+    await page.click('[aria-label="Log out"]');
     await expect(page).toHaveURL(/\/login/);
   });
 });

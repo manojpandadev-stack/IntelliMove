@@ -1,15 +1,23 @@
 import { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { useGetAllRides, useGetAllUsers, useGetAvailableDrivers, useAiQuery } from '../api/hooks';
+import AppShell from '../components/AppShell';
+import Icon from '../components/Icon';
 
 type Tab = 'overview' | 'rides' | 'users' | 'drivers' | 'ai';
 
+const TAB_ICONS: Record<Tab, 'activity' | 'route' | 'users' | 'car' | 'sparkles'> = {
+  overview: 'activity',
+  rides: 'route',
+  users: 'users',
+  drivers: 'car',
+  ai: 'sparkles',
+};
+
 export default function AdminDashboard() {
-  const { user, logout } = useAuth();
   const [tab, setTab] = useState<Tab>('overview');
   const [aiQuestion, setAiQuestion] = useState('');
 
-  const { data: rides } = useGetAllRides();
+  const { data: rides, isLoading: ridesLoading } = useGetAllRides();
   const { data: users } = useGetAllUsers();
   const { data: drivers } = useGetAvailableDrivers();
   const aiMutation = useAiQuery();
@@ -27,67 +35,70 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm px-6 py-4 flex justify-between items-center">
-        <h1 className="text-xl font-bold text-gray-900">IntelliMove - Admin</h1>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-600">{user?.firstName} {user?.lastName}</span>
-          <button onClick={logout} className="text-sm text-red-600 hover:underline">Logout</button>
-        </div>
-      </nav>
-
-      <div className="max-w-7xl mx-auto p-6">
+    <AppShell title="Operations">
+      <div>
         {/* Tab bar */}
-        <div className="flex gap-1 mb-6 border-b">
+        <div className="mb-6 flex gap-1 overflow-x-auto border-b" style={{ borderColor: 'var(--im-border)' }} role="tablist">
           {tabs.map((t) => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition ${
-                tab === t.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}>{t.label}</button>
+            <button
+              key={t.key}
+              role="tab"
+              aria-selected={tab === t.key}
+              onClick={() => setTab(t.key)}
+              className={`im-nav-item ${tab === t.key ? 'active !rounded-b-none !border-b-2' : ''}`}
+              style={tab === t.key ? { borderBottom: '2px solid var(--im-brand-600)', borderRadius: '10px 10px 0 0' } : undefined}
+            >
+              <Icon name={TAB_ICONS[t.key]} size={16} />
+              {t.label}
+            </button>
           ))}
         </div>
 
         {tab === 'overview' && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-lg shadow p-4 text-center">
-              <p className="text-3xl font-bold text-blue-600">{rides?.totalElements ?? 0}</p>
-              <p className="text-sm text-gray-500">Total Rides</p>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div className="im-card im-card-pad">
+              <p className="flex items-center gap-2 text-3xl font-bold text-[var(--im-bright)]">
+                {ridesLoading ? <span className="im-skeleton h-8 w-14 inline-block" /> : (rides?.totalElements ?? 0)}
+              </p>
+              <p className="text-sm text-[var(--im-text-muted)]">Total Rides</p>
             </div>
-            <div className="bg-white rounded-lg shadow p-4 text-center">
-              <p className="text-3xl font-bold text-green-600">{users?.totalElements ?? 0}</p>
-              <p className="text-sm text-gray-500">Total Users</p>
+            <div className="im-card im-card-pad">
+              <p className="text-3xl font-bold text-emerald-600">{users?.totalElements ?? 0}</p>
+              <p className="text-sm text-[var(--im-text-muted)]">Registered Users</p>
             </div>
-            <div className="bg-white rounded-lg shadow p-4 text-center">
-              <p className="text-3xl font-bold text-purple-600">{drivers?.length ?? 0}</p>
-              <p className="text-sm text-gray-500">Active Drivers</p>
+            <div className="im-card im-card-pad">
+              <p className="text-3xl font-bold text-violet-600">{drivers?.length ?? 0}</p>
+              <p className="text-sm text-[var(--im-text-muted)]">Active Drivers</p>
             </div>
-            <div className="bg-white rounded-lg shadow p-4 text-center">
-              <p className="text-3xl font-bold text-orange-600">Online</p>
-              <p className="text-sm text-gray-500">System Status</p>
+            <div className="im-card im-card-pad">
+              <p className="flex items-center gap-2 text-lg font-bold text-emerald-600">
+                <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Online
+              </p>
+              <p className="text-sm text-[var(--im-text-muted)]">System Status</p>
             </div>
           </div>
         )}
 
         {tab === 'rides' && (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
+          <div className="rounded-lg shadow overflow-hidden border border-[var(--im-border)] bg-[var(--im-surface)]">
+            <table className="min-w-full divide-y divide-[var(--im-border)] text-sm">
+              <thead className="bg-[var(--im-bg-alt)]">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Ride ID</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Status</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Type</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Fare</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Date</th>
+                  <th className="px-4 py-3 text-left font-medium text-[var(--im-text-muted)]">Ride ID</th>
+                  <th className="px-4 py-3 text-left font-medium text-[var(--im-text-muted)]">Status</th>
+                  <th className="px-4 py-3 text-left font-medium text-[var(--im-text-muted)]">Type</th>
+                  <th className="px-4 py-3 text-left font-medium text-[var(--im-text-muted)]">Fare</th>
+                  <th className="px-4 py-3 text-left font-medium text-[var(--im-text-muted)]">Date</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-[var(--im-border)]">
                 {rides?.content?.map((ride) => (
-                  <tr key={ride.id} className="hover:bg-gray-50">
+                  <tr key={ride.id} className="hover:bg-[var(--im-elevated)]">
                     <td className="px-4 py-3 font-mono text-xs">{ride.id.substring(0, 8)}...</td>
-                    <td className="px-4 py-3"><span className="px-2 py-1 bg-gray-100 rounded text-xs">{ride.status}</span></td>
+                    <td className="px-4 py-3"><span className="px-2 py-1 rounded text-xs bg-[var(--im-elevated)]">{ride.status}</span></td>
                     <td className="px-4 py-3">{ride.rideType}</td>
                     <td className="px-4 py-3">{ride.finalFare ? `$${ride.finalFare.toFixed(2)}` : ride.estimatedFare ? `~$${ride.estimatedFare.toFixed(2)}` : '-'}</td>
-                    <td className="px-4 py-3 text-gray-500">{new Date(ride.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-[var(--im-text-muted)]">{new Date(ride.createdAt).toLocaleDateString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -96,23 +107,23 @@ export default function AdminDashboard() {
         )}
 
         {tab === 'users' && (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
+          <div className="rounded-lg shadow overflow-hidden border border-[var(--im-border)] bg-[var(--im-surface)]">
+            <table className="min-w-full divide-y divide-[var(--im-border)] text-sm">
+              <thead className="bg-[var(--im-bg-alt)]">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Name</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Email</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Role</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Joined</th>
+                  <th className="px-4 py-3 text-left font-medium text-[var(--im-text-muted)]">Name</th>
+                  <th className="px-4 py-3 text-left font-medium text-[var(--im-text-muted)]">Email</th>
+                  <th className="px-4 py-3 text-left font-medium text-[var(--im-text-muted)]">Role</th>
+                  <th className="px-4 py-3 text-left font-medium text-[var(--im-text-muted)]">Joined</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-[var(--im-border)]">
                 {users?.content?.map((u) => (
-                  <tr key={u.id} className="hover:bg-gray-50">
+                  <tr key={u.id} className="hover:bg-[var(--im-elevated)]">
                     <td className="px-4 py-3 font-medium">{u.firstName} {u.lastName}</td>
-                    <td className="px-4 py-3 text-gray-500">{u.email}</td>
-                    <td className="px-4 py-3"><span className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs">{u.role}</span></td>
-                    <td className="px-4 py-3 text-gray-500">{new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-[var(--im-text-muted)]">{u.email}</td>
+                    <td className="px-4 py-3"><span className="px-2 py-1 bg-[rgb(225_29_104/0.16)] text-[#FB7185] rounded text-xs">{u.role}</span></td>
+                    <td className="px-4 py-3 text-[var(--im-text-muted)]">{new Date(u.createdAt).toLocaleDateString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -121,45 +132,45 @@ export default function AdminDashboard() {
         )}
 
         {tab === 'drivers' && (
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="rounded-lg shadow p-6 border border-[var(--im-border)] bg-[var(--im-surface)]">
             <h2 className="text-lg font-semibold mb-4">Available Drivers</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {drivers?.map((d) => (
                 <div key={d.id} className="border rounded-lg p-4">
                   <p className="font-medium">{d.vehicleYear} {d.vehicleMake} {d.vehicleModel}</p>
-                  <p className="text-sm text-gray-500">{d.vehicleColor} • {d.licensePlate}</p>
+                  <p className="text-sm text-[var(--im-text-muted)]">{d.vehicleColor} • {d.licensePlate}</p>
                   <p className="text-sm mt-2">⭐ {d.rating.toFixed(1)} • {d.totalTrips} trips</p>
                   <span className={`inline-block mt-2 px-2 py-1 rounded text-xs ${
-                    d.available ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                    d.available ? 'bg-[rgb(34_197_94/0.16)] text-[#86EFAC]' : 'bg-[var(--im-elevated)] text-[var(--im-text-secondary)]'
                   }`}>{d.status}</span>
                 </div>
               ))}
-              {drivers?.length === 0 && <p className="text-gray-500">No active drivers</p>}
+              {drivers?.length === 0 && <p className="text-[var(--im-text-muted)]">No active drivers</p>}
             </div>
           </div>
         )}
 
         {tab === 'ai' && (
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="rounded-lg shadow p-6 border border-[var(--im-border)] bg-[var(--im-surface)]">
             <h2 className="text-lg font-semibold mb-4">AI Operations Assistant</h2>
             <div className="flex gap-2 mb-4">
               <input value={aiQuestion} onChange={(e) => setAiQuestion(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAiQuery()}
                 placeholder="Ask about operations... (e.g., Why did cancellations increase today?)"
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className="flex-1 px-4 py-2 border border-[var(--im-input-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--im-focus-ring)]" />
               <button onClick={handleAiQuery} disabled={aiMutation.isPending}
-                className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
+                className="px-6 py-2 bg-[var(--im-brand-600)] text-[#FFFFFF] rounded-md hover:bg-[var(--im-brand-700)] disabled:opacity-50">
                 {aiMutation.isPending ? 'Thinking...' : 'Ask'}
               </button>
             </div>
             {aiMutation.data && (
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+              <div className="mt-4 p-4 bg-[var(--im-bg-alt)] rounded-lg">
                 <pre className="whitespace-pre-wrap text-sm">{aiMutation.data.analysis}</pre>
               </div>
             )}
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }

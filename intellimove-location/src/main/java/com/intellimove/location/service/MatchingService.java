@@ -43,6 +43,15 @@ public class MatchingService {
     private static final Duration LOCK_DURATION = Duration.ofSeconds(10);
 
     /**
+     * Per-ride set of driver IDs that already rejected this specific ride.
+     * Additive filter only — the existing scoring/locking behavior is unchanged;
+     * a rejecting driver is merely skipped for THAT ride (they remain fully
+     * available for every other ride). Entries expire with the key TTL set by
+     * the matching consumer.
+     */
+    private static final String RIDE_REJECTED_PREFIX = "match:rejected:";
+
+    /**
      * Find and lock the best driver for a ride request.
      * Uses Redis distributed lock to prevent assigning the same driver to two rides.
      */
@@ -56,8 +65,16 @@ public class MatchingService {
             return Optional.empty();
         }
 
-        // Score and rank drivers
+        // Score and rank available drivers only: drivers already committed to a
+        // ride, explicitly OFFLINE, or currently holding a distributed driver
+        // lock are excluded before scoring/locking. Lock-key presence closes the
+        // TOCTOU window (see docs/POST_RELEASE_AUDIT.md section 7) before the
+        // current_ride association is committed.
         List<ScoredDriver> scored = nearbyDrivers.stream()
+                .filter(dl -> !redisTemplate.hasKey(LOCK_PREFIX + dl.driverId()))
+                .filter(dl -> !driverLocationService.isDriverBusy(dl.driverId()))
+                .filter(dl -> !"OFFLINE".equalsIgnoreCase(dl.metadata().getOrDefault("status", "AVAILABLE")))
+                .filter(dl -> !isRejectedForRide(rideId, dl.driverId()))
                 .map(dl -> scoreDriver(dl, pickupLat, pickupLng))
                 .sorted(Comparator.comparingDouble(ScoredDriver::score).reversed())
                 .limit(maxCandidates)
@@ -90,6 +107,28 @@ public class MatchingService {
         String lockKey = LOCK_PREFIX + driverId;
         redisTemplate.delete(lockKey);
         log.debug("Driver lock released: {}", driverId);
+    }
+
+    /**
+     * Mark a driver as having rejected the given ride so re-matching skips
+     * them for THAT ride only. The marker expires (bounded staleness window).
+     */
+    public void excludeDriverForRide(String rideId, String driverId) {
+        if (rideId == null || driverId == null) {
+            return;
+        }
+        String key = RIDE_REJECTED_PREFIX + rideId;
+        redisTemplate.opsForSet().add(key, driverId);
+        redisTemplate.expire(key, Duration.ofMinutes(15));
+        log.info("Driver {} excluded from re-matching for ride {}", driverId, rideId);
+    }
+
+    private boolean isRejectedForRide(String rideId, String driverId) {
+        if (rideId == null || driverId == null) {
+            return false;
+        }
+        Boolean member = redisTemplate.opsForSet().isMember(RIDE_REJECTED_PREFIX + rideId, driverId);
+        return Boolean.TRUE.equals(member);
     }
 
     private ScoredDriver scoreDriver(DriverLocationService.DriverLocation dl,

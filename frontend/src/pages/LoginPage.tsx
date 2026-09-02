@@ -28,37 +28,39 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold text-center mb-6 text-gray-900">IntelliMove</h1>
-        <p className="text-center text-gray-500 mb-6">Sign in to your account</p>
-        {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded text-sm">{error}</div>}
+    <div className="min-h-screen flex items-center justify-center bg-[var(--im-canvas)]">
+      <div className="w-full max-w-md p-8 rounded-xl border border-[var(--im-border)] bg-[var(--im-surface)] shadow-md">
+        <h1 className="text-2xl font-bold text-center mb-6 text-[var(--im-text)]">IntelliMove</h1>
+        <p className="text-center text-[var(--im-text-muted)] mb-6">Sign in to your account</p>
+        {error && <div className="mb-4 p-3 bg-red-50 text-[#FCA5A5] rounded text-sm border border-[rgb(239_68_68/0.35)]">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <label className="block text-sm font-medium text-[var(--im-text-secondary)] mb-1">Email</label>
             <input
               type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Email"
+              className="w-full px-3 py-2 border border-[var(--im-input-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--im-focus-ring)]"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <label className="block text-sm font-medium text-[var(--im-text-secondary)] mb-1">Password</label>
             <input
               type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Password"
+              className="w-full px-3 py-2 border border-[var(--im-input-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--im-focus-ring)]"
               required
             />
           </div>
           <button
             type="submit" disabled={loginMutation.isPending}
-            className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 font-medium"
+            className="w-full py-2 px-4 bg-[var(--im-brand-600)] text-[#FFFFFF] rounded-md hover:bg-[var(--im-brand-700)] disabled:opacity-50 font-medium"
           >
             {loginMutation.isPending ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-        <p className="mt-4 text-center text-sm text-gray-600">
-          Don't have an account? <Link to="/register" className="text-blue-600 hover:underline">Register</Link>
+        <p className="mt-4 text-center text-sm text-[var(--im-text-secondary)]">
+          Don't have an account? <Link to="/register" style={{ color: 'var(--im-bright)' }} className="hover:underline">Register</Link>
         </p>
       </div>
     </div>

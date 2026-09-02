@@ -3,6 +3,8 @@ package com.intellimove.user.controller;
 import com.intellimove.common.dto.ApiResponse;
 import com.intellimove.common.dto.PagedResponse;
 import com.intellimove.common.enums.Role;
+import com.intellimove.common.exception.BusinessException;
+import com.intellimove.common.security.SecurityUtils;
 import com.intellimove.user.dto.CreateUserRequest;
 import com.intellimove.user.dto.UpdateUserRequest;
 import com.intellimove.user.dto.UserResponse;
@@ -45,10 +47,21 @@ public class UserController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN') or #id == authentication.principal.id")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<UserResponse>> updateUser(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateUserRequest request) {
+        // Identity check via SecurityUtils (JWT principal), NOT SpEL principal.id —
+        // the JWT filter's principal is a String userId, so principal.id was
+        // unresolvable and every self-update failed with a 400 SpEL error.
+        String currentUserId = SecurityUtils.getCurrentUserIdString();
+        boolean admin = SecurityUtils.hasAnyRole("ADMIN", "SUPER_ADMIN");
+        if (currentUserId == null) {
+            throw new BusinessException("PROFILE_UNAUTHORIZED", "Authentication required");
+        }
+        if (!currentUserId.equals(id.toString()) && !admin) {
+            throw new BusinessException("PROFILE_FORBIDDEN", "You can only update your own profile");
+        }
         UserResponse user = userService.updateUser(id, request);
         return ResponseEntity.ok(ApiResponse.success("User updated", user));
     }

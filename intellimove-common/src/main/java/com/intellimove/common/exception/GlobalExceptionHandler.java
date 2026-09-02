@@ -12,6 +12,8 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.Instant;
@@ -78,7 +80,7 @@ public class GlobalExceptionHandler {
         String detail = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
         log.warn("Bad request body at {}: {}", request.getRequestURI(), detail);
         return buildResponse(HttpStatus.BAD_REQUEST, "Invalid request body: " + detail,
-                request.getRequestURI(), null);
+                                request.getRequestURI(), null);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -87,6 +89,20 @@ public class GlobalExceptionHandler {
         log.warn("Illegal argument at {}: {}", request.getRequestURI(), ex.getMessage());
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage(),
                 request.getRequestURI(), null);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleTypeMismatch(
+            MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+        String param = ex.getName();
+        String reason = ex.getMostSpecificCause() != null
+                ? ex.getMostSpecificCause().getMessage()
+                : ex.getMessage();
+        log.warn("Type mismatch for parameter '{}' at {}: {}", param, request.getRequestURI(), reason);
+        Map<String, Object> details = Map.of("parameter", param, "reason", reason);
+        return buildResponse(HttpStatus.BAD_REQUEST,
+                "Invalid value for parameter '" + param + "'",
+                request.getRequestURI(), details);
     }
 
     @ExceptionHandler(UnauthorizedException.class)
@@ -116,6 +132,37 @@ public class GlobalExceptionHandler {
         }
         return buildResponse(HttpStatus.NOT_ACCEPTABLE,
                 "Not Acceptable", uri, null);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleMaxUploadSize(
+            MaxUploadSizeExceededException ex, HttpServletRequest request) {
+        log.warn("Upload size exceeded at {}: {}", request.getRequestURI(), ex.getMessage());
+        Map<String, Object> details = Map.of("errorCode", "PHOTO_TOO_LARGE");
+        return buildResponse(HttpStatus.UNPROCESSABLE_ENTITY,
+                "The uploaded file is too large.", request.getRequestURI(), details);
+    }
+
+    /**
+     * Spring Security method-security denials (@PreAuthorize / AuthorizationDeniedException)
+     * are thrown INSIDE the DispatcherServlet, so without this handler they fall into
+     * the generic Exception handler above and are misreported as HTTP 500.
+     * A role-based denial must always be 403 Forbidden.
+     */
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(
+            org.springframework.security.access.AccessDeniedException ex, HttpServletRequest request) {
+        log.warn("Access denied: {} at {}", ex.getMessage(), request.getRequestURI());
+        return buildResponse(HttpStatus.FORBIDDEN, "Access denied", request.getRequestURI(), null);
+    }
+
+    /** A request sent with an unsupported HTTP method is a client error (405), not a 500. */
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Map<String, Object>> handleMethodNotSupported(
+            org.springframework.web.HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
+        log.warn("Method not supported: {} at {}", ex.getMessage(), request.getRequestURI());
+        return buildResponse(HttpStatus.METHOD_NOT_ALLOWED, "Method not allowed",
+                request.getRequestURI(), null);
     }
 
     @ExceptionHandler(Exception.class)

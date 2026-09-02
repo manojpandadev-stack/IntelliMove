@@ -26,7 +26,7 @@ public class AiSupportController {
      * The customerId is extracted from the JWT token, not from user input.
      * This prevents customers from accessing other customers' data.
      */
-    @PostMapping("/query")
+        @PostMapping("/query")
     public ResponseEntity<ApiResponse<AiSupportService.SupportResponse>> processQuery(
             @RequestHeader(value = "X-Session-Id", defaultValue = "default") String sessionId,
             @Valid @RequestBody QueryRequest request) {
@@ -38,6 +38,36 @@ public class AiSupportController {
         AiSupportService.SupportResponse response = aiSupportService.processQuery(
                 sessionId, customerId, request.getQuery());
         return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    /**
+     * Create a support ticket for the authenticated customer.
+     * The userId is derived from the JWT (SecurityUtils), never client-supplied,
+     * so customers cannot create tickets attributed to other users.
+     */
+    @PostMapping("/tickets")
+    public ResponseEntity<ApiResponse<AiSupportService.TicketResponse>> createTicket(
+            @Valid @RequestBody TicketRequest request) {
+        String customerId = SecurityUtils.getCurrentUserIdString();
+        if (customerId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("Authentication required"));
+        }
+        AiSupportService.TicketResponse created = aiSupportService.createTicket(
+                customerId, request.getSubject(), request.getCategory(), request.getMessage());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Support ticket created", created));
+    }
+
+    @GetMapping("/tickets")
+    public ResponseEntity<ApiResponse<List<AiSupportService.TicketResponse>>> listTickets() {
+        String customerId = SecurityUtils.getCurrentUserIdString();
+        if (customerId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("Authentication required"));
+        }
+        List<AiSupportService.TicketResponse> tickets = aiSupportService.listTickets(customerId);
+        return ResponseEntity.ok(ApiResponse.success(tickets));
     }
 
     @GetMapping("/conversation/{sessionId}")
@@ -60,5 +90,15 @@ public class AiSupportController {
     public static class QueryRequest {
         @NotBlank(message = "Query is required")
         private String query;
+    }
+
+    @Data
+    public static class TicketRequest {
+        @NotBlank(message = "Subject is required")
+        private String subject;
+        @NotBlank(message = "Category is required")
+        private String category;
+        @NotBlank(message = "Message is required")
+        private String message;
     }
 }

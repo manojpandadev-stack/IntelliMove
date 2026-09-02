@@ -321,6 +321,91 @@ class DriverLocationTestcontainersTest {
                 40.7128, -74.0060, Map.of(), "ride-123");
 
         String rideId = driverLocationService.getDriverRideId("ride-driver");
-        assertEquals("ride-123", rideId);
+                assertEquals("ride-123", rideId);
+    }
+
+    @Test
+    @Order(15)
+    @DisplayName("Matching: two simultaneous rides get different drivers (no double-assignment)")
+    void twoRidesGetDifferentDrivers() {
+        // ONE DRIVER -> AT MOST ONE ACTIVE RIDE. Two contending rides must each
+        // land on a distinct driver; the lock + lock-key filtering must never
+        // yield the same driver for both.
+        driverLocationService.updateDriverLocation("driver-red",
+                40.7120, -74.0060, Map.of("rating", "5.0", "totalTrips", "100"));
+        driverLocationService.updateDriverLocation("driver-blue",
+                40.7135, -74.0060, Map.of("rating", "5.0", "totalTrips", "100"));
+
+        Optional<MatchingService.MatchResult> rideA = matchingService.findAndLockDriver(
+                "ride-A", 40.7128, -74.0060, "ECONOMY");
+        Optional<MatchingService.MatchResult> rideB = matchingService.findAndLockDriver(
+                "ride-B", 40.7128, -74.0060, "ECONOMY");
+
+        assertTrue(rideA.isPresent(), "Ride A should get a driver");
+        assertTrue(rideB.isPresent(), "Ride B should get a driver");
+        Set<String> drivers = Set.of("driver-red", "driver-blue");
+        assertTrue(drivers.contains(rideA.get().driverId()));
+        assertTrue(drivers.contains(rideB.get().driverId()));
+        assertNotEquals(rideA.get().driverId(), rideB.get().driverId(),
+                "Ride A and Ride B must never share the same driver");
+    }
+
+    @Test
+    @Order(16)
+    @DisplayName("Matching: driver with an active ride is excluded")
+    void driverWithActiveRideIsExcluded() {
+        driverLocationService.updateDriverLocation("busy-driver",
+                40.7128, -74.0060, Map.of("rating", "5.0", "totalTrips", "100"));
+        driverLocationService.updateDriverLocation("idle-driver",
+                40.7128, -74.0060, Map.of("rating", "4.0", "totalTrips", "10"));
+        // simulate the current_ride marker that associateDriverWithRide would set
+        redisTemplate.opsForValue().set("driver:current_ride:busy-driver",
+                "existing-ride", java.time.Duration.ofMinutes(5));
+
+        Optional<MatchingService.MatchResult> result = matchingService.findAndLockDriver(
+                "ride-busy", 40.7128, -74.0060, "ECONOMY");
+
+        assertTrue(result.isPresent(), "An available driver should still be found");
+        assertNotEquals("busy-driver", result.get().driverId(),
+                "Driver with an active ride must not be matched");
+    }
+
+    @Test
+    @Order(17)
+    @DisplayName("Matching: driver holding the distributed lock is excluded")
+    void driverHoldingLockIsExcluded() {
+        driverLocationService.updateDriverLocation("locked-driver",
+                40.7128, -74.0060, Map.of("rating", "5.0", "totalTrips", "100"));
+        driverLocationService.updateDriverLocation("free-driver",
+                40.7130, -74.0060, Map.of("rating", "4.0", "totalTrips", "10"));
+        // simulate a lock held by an in-flight assignment (TTL not yet expired)
+        redisTemplate.opsForValue().set("lock:driver:locked-driver",
+                "ride-in-flight", java.time.Duration.ofSeconds(10));
+
+        Optional<MatchingService.MatchResult> result = matchingService.findAndLockDriver(
+                "ride-lock", 40.7128, -74.0060, "ECONOMY");
+
+        assertTrue(result.isPresent(), "An available driver should still be found");
+        assertNotEquals("locked-driver", result.get().driverId(),
+                "Driver holding the distributed lock must not be matched");
+    }
+
+    @Test
+    @Order(18)
+    @DisplayName("Matching: stale driver (no live heartbeat) is excluded")
+    void staleDriverIsExcluded() {
+        driverLocationService.updateDriverLocation("fresh-driver",
+                40.7128, -74.0060, Map.of("rating", "5.0", "totalTrips", "100"));
+        // register a GEO point WITHOUT a details hash -> findNearbyDrivers
+        // treats it as stale (no heartbeat data) and evicts it
+        redisTemplate.opsForGeo().add("driver:locations",
+                new org.springframework.data.geo.Point(-74.0060, 40.7128), "stale-driver");
+
+        Optional<MatchingService.MatchResult> result = matchingService.findAndLockDriver(
+                "ride-stale", 40.7128, -74.0060, "ECONOMY");
+
+        assertTrue(result.isPresent(), "Only the fresh driver should be matchable");
+        assertEquals("fresh-driver", result.get().driverId(),
+                "Stale driver with no heartbeat must be excluded");
     }
 }

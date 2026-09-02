@@ -98,6 +98,15 @@ public class PricingService {
     }
 
     /**
+     * The demand multiplier currently applied to every fare calculation.
+     * Exposed so fare previews can display the actual surge factor that was
+     * used, instead of duplicating pricing logic in the presentation layer.
+     */
+    public BigDecimal getDemandMultiplier() {
+        return demandMultiplierDefault;
+    }
+
+    /**
      * Haversine formula for distance between two coordinates.
      */
     public double haversineDistance(double lat1, double lon1, double lat2, double lon2) {

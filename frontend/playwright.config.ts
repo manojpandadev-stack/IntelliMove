@@ -1,5 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
+// See e2e/global-setup.ts - clears orphan rides/stale driver state before the
+// suite so auto-dispatch cannot vacuum leftovers onto an online test driver.
+const globalSetup = './e2e/global-setup.ts';
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
@@ -7,6 +11,7 @@ export default defineConfig({
   fullyParallel: false,
   retries: 0,
   workers: 1,
+  globalSetup,
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',

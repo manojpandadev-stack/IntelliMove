@@ -89,3 +89,17 @@ grafana_data/
 
 # Ollama models
 *.gguf
+
+# Playwright runtime results (never commit)
+frontend/test-results/
+
+# UI verification screenshots (never commit)
+shots/
+
+# Root diagnostic stdout captures
+*.out
+
+# Kubernetes secrets — also the single-file form at k8s/secrets.yaml (never commit)
+k8s/secrets*.yaml
+k8s/secrets*.yml
+

@@ -41,6 +41,11 @@ spring:
   kafka:
     bootstrap-servers: ${KAFKA_BROKERS:localhost:9092}
 
+# Publish the transactional-outbox backlog quickly so newly registered users
+# get their user-service profile within ~1 second (default is 5000ms).
+outbox:
+  poll-interval-ms: 1000
+
 jwt:
   secret: ${JWT_SECRET:changeme_jwt_secret_min_32_chars_long!!}
   expiration-ms: ${JWT_EXPIRATION_MS:3600000}

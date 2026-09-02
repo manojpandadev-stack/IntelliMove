@@ -1,12 +1,15 @@
 package com.intellimove.payment.controller;
 
 import com.intellimove.common.dto.ApiResponse;
+import com.intellimove.common.dto.PagedResponse;
+import com.intellimove.common.security.SecurityUtils;
 import com.intellimove.payment.dto.InitiatePaymentRequest;
 import com.intellimove.payment.dto.WebhookRequest;
 import com.intellimove.payment.entity.Payment;
 import com.intellimove.payment.service.PaymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -67,5 +70,33 @@ public class PaymentController {
     public ResponseEntity<ApiResponse<Payment>> getPaymentByRideId(@PathVariable UUID rideId) {
         Payment payment = paymentService.getPaymentByRideId(rideId);
         return ResponseEntity.ok(ApiResponse.success(payment));
+    }
+
+    /**
+     * Lists payments belonging to a customer. Customers may only list their own
+     * payments; admins can list any customer's payments (IDOR protection).
+     */
+    @GetMapping("/customer/{customerId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<PagedResponse<Payment>>> getCustomerPayments(
+            @PathVariable UUID customerId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        UUID currentUserId = SecurityUtils.getCurrentUserId();
+        if (currentUserId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("Authentication required"));
+        }
+        if (!SecurityUtils.hasAnyRole("ADMIN", "SUPER_ADMIN") && !currentUserId.equals(customerId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ApiResponse.error("You are not authorized to view these payments"));
+        }
+        Page<Payment> result = paymentService.getCustomerPayments(
+                customerId, page, Math.min(size, 100));
+        PagedResponse<Payment> body = new PagedResponse<>(
+                result.getContent(), result.getNumber(), result.getSize(),
+                result.getTotalElements(), result.getTotalPages(),
+                result.isFirst(), result.isLast());
+        return ResponseEntity.ok(ApiResponse.success(body));
     }
 }

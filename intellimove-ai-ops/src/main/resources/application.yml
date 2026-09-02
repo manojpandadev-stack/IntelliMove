@@ -46,7 +46,9 @@ ai:
       operational data and provide insights. You have access to tools that retrieve
       specific metrics and statistics. Always base your analysis on data returned by
       tools. Never fabricate data. Provide clear, actionable insights.
-    timeout-seconds: 120
+    # Max wait for the LLM before falling back to deterministic keyword routing.
+    # Kept below typical gateway/client timeouts so the API always answers promptly.
+    timeout-seconds: ${AI_OPS_TIMEOUT_SECONDS:45}
     max-conversation-history: 20
     llm-enabled: ${LLM_ENABLED:true}
 

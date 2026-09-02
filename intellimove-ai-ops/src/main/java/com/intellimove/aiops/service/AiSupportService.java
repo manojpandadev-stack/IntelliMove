@@ -69,6 +69,59 @@ public class AiSupportService {
     }
 
     /**
+     * Persists a customer support ticket for the authenticated user.
+     * Persisted in Redis so tickets survive across sessions; scoped to customerId.
+     */
+    public TicketResponse createTicket(String customerId, String subject, String category, String message) {
+        String id = UUID.randomUUID().toString();
+        long now = System.currentTimeMillis();
+        String ticketJson;
+        try {
+            ticketJson = objectMapper.writeValueAsString(Map.of(
+                    "id", id,
+                    "userId", customerId,
+                    "subject", subject,
+                    "category", category,
+                    "message", message,
+                    "status", "OPEN",
+                    "createdAt", now,
+                    "updatedAt", now
+            ));
+        } catch (Exception e) {
+            throw new IllegalStateException("Could not serialize ticket", e);
+        }
+        String key = "ai:support:ticket:" + id;
+        String indexKey = "ai:support:tickets:" + customerId;
+        redisTemplate.opsForValue().set(key, ticketJson, Duration.ofHours(168));
+        redisTemplate.opsForZSet().add(indexKey, id, now);
+        redisTemplate.expire(indexKey, Duration.ofHours(168));
+
+        log.info("Support ticket {} created for customer {}", id, customerId);
+        return new TicketResponse(id, subject, category, "OPEN", now);
+    }
+
+    public List<TicketResponse> listTickets(String customerId) {
+        Set<String> ids = redisTemplate.opsForZSet().reverseRange("ai:support:tickets:" + customerId, 0, -1);
+        if (ids == null) return List.of();
+        List<TicketResponse> out = new ArrayList<>();
+        for (String id : ids) {
+            String json = redisTemplate.opsForValue().get("ai:support:ticket:" + id);
+            if (json == null) continue;
+            Map<String, Object> m = parseJson(json);
+            out.add(new TicketResponse(
+                    (String) m.get("id"),
+                    (String) m.get("subject"),
+                    (String) m.get("category"),
+                    (String) m.getOrDefault("status", "OPEN"),
+                    ((Number) m.getOrDefault("createdAt", 0L)).longValue()
+            ));
+        }
+        return out;
+    }
+
+    public record TicketResponse(String id, String subject, String category, String status, long createdAt) {}
+
+    /**
      * Process query using Spring AI ChatClient with tool calling.
      */
     private SupportResponse processWithLlm(String sessionId, String customerId, String query) {

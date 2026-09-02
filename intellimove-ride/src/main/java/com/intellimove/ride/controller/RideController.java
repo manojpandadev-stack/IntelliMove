@@ -5,6 +5,8 @@ import com.intellimove.common.dto.PagedResponse;
 import com.intellimove.common.security.SecurityUtils;
 import com.intellimove.ride.dto.CancelRideRequest;
 import com.intellimove.ride.dto.CreateRideRequest;
+import com.intellimove.ride.dto.FareEstimateResponse;
+import com.intellimove.ride.dto.RideEtaContext;
 import com.intellimove.ride.dto.RideResponse;
 import com.intellimove.ride.service.RideService;
 import jakarta.validation.Valid;
@@ -37,6 +39,18 @@ public class RideController {
         RideResponse ride = rideService.requestRide(customerId, request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Ride requested", ride));
+    }
+
+    @GetMapping("/estimate")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'DRIVER', 'ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<FareEstimateResponse>> estimateFare(
+            @RequestParam("pickupLat") double pickupLat,
+            @RequestParam("pickupLng") double pickupLng,
+            @RequestParam("dropoffLat") double dropoffLat,
+            @RequestParam("dropoffLng") double dropoffLng) {
+        FareEstimateResponse estimate = rideService.estimateFare(
+                pickupLat, pickupLng, dropoffLat, dropoffLng);
+        return ResponseEntity.ok(ApiResponse.success(estimate));
     }
 
     @GetMapping("/{id}")
@@ -91,6 +105,23 @@ public class RideController {
         }
         RideResponse ride = rideService.driverAccept(id, driverId);
         return ResponseEntity.ok(ApiResponse.success("Ride accepted", ride));
+    }
+
+    /**
+     * Assigned driver rejects an incoming ride request. The ride returns to
+     * REQUESTED (it is NOT cancelled) so matching can select another driver.
+     */
+    @PostMapping("/{id}/reject")
+    @PreAuthorize("hasRole('DRIVER')")
+    public ResponseEntity<ApiResponse<RideResponse>> rejectRide(
+            @PathVariable UUID id) {
+        UUID driverId = SecurityUtils.getCurrentUserId();
+        if (driverId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("Authentication required"));
+        }
+        RideResponse ride = rideService.driverReject(id, driverId);
+        return ResponseEntity.ok(ApiResponse.success("Ride request rejected", ride));
     }
 
     @PostMapping("/{id}/start")
@@ -194,5 +225,31 @@ public class RideController {
             @PathVariable UUID userId) {
         boolean authorized = rideService.isUserAuthorizedForRide(rideId, userId);
         return ResponseEntity.ok(authorized);
+    }
+
+    /**
+     * Internal endpoint for the Location Service's live ETA feature. Returns
+     * the minimal ride context (assigned driver, pickup coordinates, state)
+     * needed to compute a pickup ETA from the driver's real-time GEO position.
+     * No RBAC because it is a service-to-service call (same convention as the
+     * other {@code /internal/**} endpoints).
+     */
+    @GetMapping("/internal/{rideId}/eta-context")
+    public ResponseEntity<ApiResponse<RideEtaContext>> getRideEtaContext(
+            @PathVariable UUID rideId) {
+        return ResponseEntity.ok(ApiResponse.success(rideService.getEtaContext(rideId)));
+    }
+
+    /**
+     * Internal endpoint for the Location Service's automatic driver matching.
+     * Reports whether the ride can still accept a driver assignment, i.e. its
+     * state-machine transition to DRIVER_ASSIGNED is still possible
+     * (REQUESTED or MATCHING). Lets the matching consumer skip stale Kafka
+     * events for completed/cancelled rides instantly instead of burning
+     * match attempts on them.
+     */
+    @GetMapping("/internal/{rideId}/assignable")
+    public ResponseEntity<Boolean> isRideAssignable(@PathVariable UUID rideId) {
+        return ResponseEntity.ok(rideService.isAssignable(rideId));
     }
 }

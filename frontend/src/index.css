@@ -1,14 +1,473 @@
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════════════════════════
+   IntelliMove Design System — Dark Rose theme
+   Identity: premium night-mode mobility technology.
+   Palette: deep charcoal/plum surfaces + electric rose accent.
+   Rose is the accent, never the background.
+   ═══════════════════════════════════════════════════════════════════ */
+
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  color-scheme: dark;
+
+  /* ── Brand — Dark Rose ramp ─────────────────────────────────────── */
+  --im-brand-600: #E11D68;                 /* primary rose: solid actions */
+  --im-brand-700: #BE185D;                 /* rose hover */
+  --im-brand-400: #F43F7F;                 /* bright rose: focus ring */
+  --im-bright: #F43F7F;
+  --im-soft: #FB7185;                      /* soft rose: tinted text */
+  --im-brand-100: rgb(225 29 104 / 0.16);  /* translucent rose wash */
+
+  /* Status colors */
+  --im-success: #22C55E;
+  --im-warning: #F59E0B;
+  --im-danger: #EF4444;
+
+  /* ── Surfaces (deep charcoal/plum) ──────────────────────────────── */
+  --im-canvas: #0F080D;                    /* page background */
+  --im-bg-alt: #170C13;                    /* secondary background */
+  --im-surface: #21101A;                   /* card background */
+  --im-elevated: #2A1420;                  /* elevated card / popover */
+
+  /* ── Text tiers ─────────────────────────────────────────────────── */
+  --im-text: #FFF1F5;
+  --im-text-secondary: #D1A8B7;
+  --im-text-muted: #9F7183;
+
+  /* ── Lines & inputs ─────────────────────────────────────────────── */
+  --im-border: #3A1D2B;
+  --im-input-border: #4A2435;
+  --im-input-bg: #1A0D14;
+  --im-focus-ring: #F43F7F;
+
+  /* ── Elevation & glow ───────────────────────────────────────────── */
+  --im-radius: 14px;
+  --im-radius-sm: 10px;
+  --im-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5), 0 2px 6px rgb(15 8 13 / 0.45);
+  --im-shadow-lg: 0 12px 32px rgb(0 0 0 / 0.55), 0 4px 12px rgb(0 0 0 / 0.4);
+  --im-glow-sm: 0 2px 10px rgb(225 29 104 / 0.35);
+  --im-glow-fab: 0 10px 28px rgb(225 29 104 / 0.5);
+
+  /* ── Restrained gradients ───────────────────────────────────────── */
+  --im-gradient-hero: linear-gradient(120deg, #170C13 0%, #2A1420 42%, #57132E 100%); /* dark plum → dark rose */
+  --im-gradient-primary: linear-gradient(135deg, var(--im-brand-600), var(--im-brand-700));
+
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color-scheme: light dark;
+  color: var(--im-text);
+  background-color: var(--im-canvas);
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background-color: var(--im-canvas);
+  color: var(--im-text);
+}
+
+/* Glass surface — sticky header, bottom mobile nav, map overlays.
+   Translucent plum so page content glows softly underneath. */
+.im-glass {
+  background: rgb(23 12 19 / 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ─── Form Control Colors ──────────────────────────────────────────
+   Never depend on user-agent defaults: every control gets an explicit
+   readable foreground, background, caret and placeholder. Light text on
+   the dark rose input field (~16:1); caret matches the text color. */
+input,
+textarea,
+select {
+  color: var(--im-text);
+  background-color: var(--im-input-bg);
+  caret-color: var(--im-text);            /* visible light caret */
+  border-color: var(--im-input-border);
+  color-scheme: dark;                     /* pin native control rendering */
+}
+
+select option {
+  color: var(--im-text);
+  background-color: var(--im-bg-alt);
+}
+
+input::placeholder,
+textarea::placeholder,
+select::placeholder {
+  color: #b98a9c;             /* ≈6.3:1 on #1A0D14 — readable, clearly muted */
+}
+
+/* Legacy Tailwind alert surface remapped to its Dark Rose equivalent so
+   existing markup (and e2e selectors like `.bg-red-50`) stay valid while
+   rendering readable dark-theme styling (#FCA5A5-classified text sits on
+   top via component classes). */
+.bg-red-50 {
+  background-color: rgb(239 68 68 / 0.12);
+}
+
+.im-input {
+  width: 100%;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--im-input-border);
+  border-radius: var(--im-radius-sm);
+  font-size: 0.9375rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.im-input:focus {
+  outline: none;
+  border-color: var(--im-focus-ring);
+  box-shadow: 0 0 0 3px rgb(244 63 127 / 0.3);
+}
+.im-input:disabled { background: rgb(42 20 32); color: var(--im-text-muted); }
+
+.im-label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--im-text-secondary);
+  margin-bottom: 0.35rem;
+}
+
+.im-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  border-radius: var(--im-radius-sm);
+  padding: 0.65rem 1.25rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease,
+    transform 0.1s ease, opacity 0.15s ease;
+  border: 1px solid transparent;
+  line-height: 1.25;
+}
+.im-btn:focus-visible {
+  outline: 2px solid var(--im-focus-ring);
+  outline-offset: 2px;
+}
+.im-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.im-btn:not(:disabled):active { transform: translateY(1px); }
+
+.im-btn-primary {
+  background: var(--im-gradient-primary);
+  color: #ffffff;
+  box-shadow: var(--im-glow-sm);
+}
+.im-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--im-brand-700), #9D1449);
+}
+
+.im-btn-secondary {
+  background: var(--im-elevated);
+  color: var(--im-text);
+  border-color: var(--im-border);
+}
+.im-btn-secondary:hover:not(:disabled) { background: rgb(53 23 38); }
+
+.im-btn-danger {
+  background: linear-gradient(135deg, #B91C1C, #991B1B);
+  color: #ffffff;
+}
+.im-btn-danger:hover:not(:disabled) { background: #991B1B; }
+
+.im-btn-success {
+  background: linear-gradient(135deg, #15803D, #166534);
+  color: #ffffff;
+}
+.im-btn-success:hover:not(:disabled) { background: #166534; }
+
+.im-btn-ghost { background: transparent; color: var(--im-text-muted); }
+.im-btn-ghost:hover:not(:disabled) { background: rgb(225 29 104 / 0.12); color: var(--im-text); }
+
+.im-card {
+  background: var(--im-surface);
+  border: 1px solid var(--im-border);
+  border-radius: var(--im-radius);
+  box-shadow: var(--im-shadow-sm);
+}
+
+.im-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.im-alert-error {
+  background: rgb(239 68 68 / 0.12);
+  border: 1px solid rgb(239 68 68 / 0.35);
+  color: #FCA5A5;
+  border-radius: var(--im-radius-sm);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+.im-alert-info {
+  background: rgb(225 29 104 / 0.10);
+  border: 1px solid rgb(225 29 104 / 0.35);
+  color: #FDA4AF;
+  border-radius: var(--im-radius-sm);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+}
+
+.im-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: #241119;
+  border-radius: 8px;
+}
+.im-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(251 113 133 / 0.10), transparent);
+  animation: im-shimmer 1.4s infinite;
+}
+@keyframes im-shimmer { 100% { transform: translateX(100%); } }
+
+@keyframes im-pulse-ring {
+  0%   { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+.im-searching-ring { animation: im-pulse-ring 1.6s cubic-bezier(0.2, 0.6, 0.4, 1) infinite; }
+
+@keyframes im-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.im-fade-up { animation: im-fade-up 0.28s ease both; }
+
+@keyframes im-spin { to { transform: rotate(360deg); } }
+.im-spin { animation: im-spin 0.9s linear infinite; }
+
+.im-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--im-text-secondary);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.im-nav-item:hover { background: rgb(225 29 104 / 0.10); color: var(--im-text); }
+.im-nav-item.active {
+  background: rgb(225 29 104 / 0.20);
+  color: var(--im-soft);
+  font-weight: 600;
+}
+
+/* ─── Premium motion & surface layer ─────────────────────────────── */
+
+/* Card hover elevation (booking card, ride cards, quick actions) */
+.im-elevate {
+  transition: box-shadow 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
+}
+.im-elevate:hover {
+  box-shadow: var(--im-shadow-lg), 0 0 22px rgb(225 29 104 / 0.10);
+  transform: translateY(-2px);
+}
+
+/* ─── Ride category selection cards (booking panel) ────────────────
+   Subtle hover lift, gentle press feedback, Dark Rose glow when the
+   card is selected (selection ring/glow itself is applied inline).
+   Motion is fully disabled under prefers-reduced-motion below. */
+.im-ride-option {
+  min-height: 48px; /* accessible touch target (WCAG 2.5.8 / Uber-style cards) */
+
+  transition: border-color 0.2s ease, background-color 0.2s ease,
+    box-shadow 0.25s ease, transform 0.15s ease;
+}
+.im-ride-option:hover {
+  box-shadow: var(--im-shadow-sm), 0 0 18px rgb(225 29 104 / 0.12);
+  transform: translateY(-1px);
+}
+.im-ride-option:active {
+  transform: scale(0.985);
+}
+
+/* Dropdown / popover entrance */
+@keyframes im-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.im-pop { animation: im-pop 0.16s ease both; transform-origin: top center; }
+
+/* Mobile floating action button (hidden on md+ by the media query itself,
+   avoiding utility-vs-component display conflicts) */
+.im-fab {
+  position: fixed;
+  bottom: 6rem; /* above the bottom nav */
+  right: 1rem;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 48px;
+  padding: 0.875rem 1.375rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #ffffff;
+  background: var(--im-gradient-primary);
+  border: none;
+  border-radius: 999px;
+  box-shadow: var(--im-glow-fab);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.im-fab:active { transform: scale(0.97); }
+.im-fab:focus-visible { outline: 2px solid var(--im-focus-ring); outline-offset: 3px; }
+@media (min-width: 768px) {
+  .im-fab { display: none; }
+}
+
+/* Toast notifications */
+@keyframes im-toast-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.im-toast {
+  animation: im-toast-in 0.24s cubic-bezier(0.21, 1.02, 0.73, 1) both;
+  background: var(--im-elevated);
+  border: 1px solid var(--im-border);
+  color: var(--im-text);
+  border-radius: var(--im-radius-sm);
+  box-shadow: var(--im-shadow-lg);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  max-width: 380px;
+}
+.im-toast-success { border-left: 4px solid var(--im-success); }
+.im-toast-error   { border-left: 4px solid var(--im-danger); }
+.im-toast-info    { border-left: 4px solid var(--im-brand-600); }
+
+/* Current-location pulsing dot (map + inputs) */
+@keyframes im-pulse-dot {
+  0%   { box-shadow: 0 0 0 0 rgb(244 63 127 / 0.5); }
+  70%  { box-shadow: 0 0 0 9px rgb(244 63 127 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(244 63 127 / 0); }
+}
+.im-pulse-dot { animation: im-pulse-dot 2s ease-out infinite; }
+
+/* Map marker drop-in */
+@keyframes im-marker-drop {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.im-marker-drop { animation: im-marker-drop 0.35s cubic-bezier(0.34, 1.4, 0.64, 1) both; }
+
+/* Smooth SVG marker movement when real coordinates change */
+.im-marker-move { transition: transform 0.7s cubic-bezier(0.25, 0.8, 0.35, 1); }
+
+/* Live trip progress bar */
+.im-progress {
+  height: 7px;
+  border-radius: 999px;
+  background: #2A1420;
+  overflow: hidden;
+}
+.im-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--im-brand-600), var(--im-bright));
+  transition: width 0.8s ease;
+}
+@keyframes im-progress-sheen {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(200%); }
+}
+.im-progress-sheen {
+  position: relative;
+  overflow: hidden;
+}
+.im-progress-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.25), transparent);
+  animation: im-progress-sheen 1.8s infinite;
+}
+
+/* Collapsible ride details */
+.im-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease;
+}
+.im-collapse.open { grid-template-rows: 1fr; }
+.im-collapse > div { overflow: hidden; }
+
+/* Status stepper */
+.im-step {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.im-step-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  flex-shrink: 0;
+  border: 2px solid var(--im-border);
+  background: var(--im-elevated);
+  color: var(--im-text-muted);
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+.im-step-dot.done {
+  background: var(--im-success);
+  border-color: var(--im-success);
+  color: #052E12;
+}
+.im-step-dot.current {
+  background: var(--im-brand-600);
+  border-color: var(--im-brand-600);
+  color: #ffffff;
+  box-shadow: 0 0 0 4px rgb(225 29 104 / 0.25);
+}
+.im-step-line {
+  flex: 1;
+  height: 2px;
+  min-width: 14px;
+  background: var(--im-border);
+  transition: background-color 0.3s ease;
+}
+.im-step-line.done { background: var(--im-success); }
+
+@media (prefers-reduced-motion: reduce) {
+  .im-searching-ring, .im-fade-up, .im-skeleton::after, .im-spin,
+  .im-toast, .im-pop, .im-marker-drop, .im-pulse-dot,
+  .im-progress-sheen::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .im-elevate, .im-elevate:hover,
+  .im-marker-move, .im-collapse, .im-progress-bar, .im-step-dot, .im-step-line,
+  .im-fab, .im-ride-option, .im-ride-option:hover {
+    transition-duration: 0.01ms !important;
+    transform: none !important;
+  }
 }

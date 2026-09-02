@@ -5,6 +5,7 @@ import com.intellimove.notification.channel.NotificationChannel;
 import com.intellimove.notification.entity.Notification;
 import com.intellimove.notification.repository.NotificationRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -155,6 +156,12 @@ public class NotificationService {
     }
 
     @Transactional(readOnly = true)
+    public Page<Notification> getRecipientNotificationsPage(String recipientId,
+                                                            org.springframework.data.domain.Pageable pageable) {
+        return notificationRepository.findByRecipientIdOrderByCreatedAtDesc(recipientId, pageable);
+    }
+
+    @Transactional(readOnly = true)
     public long getUnreadCount(String recipientId) {
         return notificationRepository.countByRecipientIdAndReadFalse(recipientId);
     }
@@ -168,5 +175,21 @@ public class NotificationService {
                 notificationRepository.save(n);
             }
         });
+    }
+
+    /**
+     * Marks every unread notification belonging to the given recipient as read.
+     * Only notifications owned by the recipient are touched (IDOR-safe).
+     */
+    @Transactional
+    public int markAllAsRead(String recipientId) {
+        List<Notification> unread = notificationRepository.findByRecipientIdAndReadFalse(recipientId);
+        Instant now = Instant.now();
+        for (Notification n : unread) {
+            n.setRead(true);
+            n.setReadAt(now);
+        }
+        notificationRepository.saveAll(unread);
+        return unread.size();
     }
 }

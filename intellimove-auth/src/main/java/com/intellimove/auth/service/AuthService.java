@@ -6,9 +6,12 @@ import com.intellimove.common.dto.auth.AuthResponse;
 import com.intellimove.common.dto.auth.LoginRequest;
 import com.intellimove.common.dto.auth.RefreshTokenRequest;
 import com.intellimove.common.dto.auth.RegisterRequest;
+import com.intellimove.common.enums.DomainEventType;
 import com.intellimove.common.enums.Role;
+import com.intellimove.common.event.UserRegisteredEvent;
 import com.intellimove.common.exception.BusinessException;
 import com.intellimove.common.exception.ResourceNotFoundException;
+import com.intellimove.common.outbox.OutboxService;
 import com.intellimove.common.security.JwtTokenProvider;
 import com.intellimove.common.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +42,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final StringRedisTemplate redisTemplate;
     private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+    private final OutboxService outboxService;
 
     private static final String TOKEN_BLACKLIST_PREFIX = "bl:token:";
     private static final int MAX_FAILED_ATTEMPTS = 5;
@@ -64,6 +68,29 @@ public class AuthService {
 
         authUser = authUserRepository.save(authUser);
         log.info("User registered: {}", authUser.getEmail());
+
+        // Transactional outbox: reliably provision the matching user-service
+        // profile. The outbox row is written in the SAME local transaction as
+        // the auth user insert, so registration and profile provisioning are
+        // atomic — if the write fails the whole registration rolls back and the
+        // caller sees an error instead of a silently broken profile.
+        // The existing OutboxService scheduler publishes this to "user-events";
+        // the User Service consumes it idempotently (by userId).
+        outboxService.saveEvent(
+                UserRegisteredEvent.builder()
+                        .eventType(DomainEventType.USER_REGISTERED.name())
+                        .userId(authUser.getId().toString())
+                        .email(authUser.getEmail())
+                        .firstName(authUser.getFirstName())
+                        .lastName(authUser.getLastName())
+                        .phoneNumber(authUser.getPhoneNumber())
+                        .role(authUser.getRoles().iterator().next().name())
+                        .enabled(authUser.isEnabled())
+                        .source("auth-service")
+                        .correlationId(authUser.getId().toString())
+                        .build(),
+                "AuthUser", authUser.getId().toString(),
+                "user-events", authUser.getId().toString());
 
         UserPrincipal principal = buildUserPrincipal(authUser);
         String userId = authUser.getId().toString();

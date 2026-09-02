@@ -32,6 +32,14 @@ public class DriverLocationService {
     private static final String DRIVER_HASH_KEY_PREFIX = "driver:details:";
     private static final String DRIVER_RIDE_KEY_PREFIX = "driver:current_ride:";
     private static final long LOCATION_TTL_MINUTES = 30;
+    /**
+     * A driver whose last GPS heartbeat is older than this is considered gone
+     * (app closed, network lost) and must be excluded from matching. The
+     * driver's details hash expires after LOCATION_TTL_MINUTES, but the shared
+     * GEO sorted set has no per-member expiry, so stale members must be
+     * filtered and evicted here.
+     */
+    private static final long HEARTBEAT_STALE_MS = 5 * 60 * 1000L;
 
     @Autowired
     public DriverLocationService(StringRedisTemplate redisTemplate,
@@ -84,6 +92,32 @@ public class DriverLocationService {
         return redisTemplate.opsForValue().get(DRIVER_RIDE_KEY_PREFIX + driverId);
     }
 
+    /**
+     * True when the driver is currently tied to an active ride (assignment,
+     * accepted trip, etc.). Used by matching so busy drivers are never offered
+     * to new ride requests.
+     */
+    public boolean isDriverBusy(String driverId) {
+        return Boolean.TRUE.equals(redisTemplate.hasKey(DRIVER_RIDE_KEY_PREFIX + driverId));
+    }
+
+    /**
+     * Marks the driver as committed to a ride for the purpose of matching.
+     * The marker expires with the location TTL as a safety net; lifecycle
+     * events (completion/cancellation) clear it explicitly.
+     */
+    public void associateDriverWithRide(String driverId, String rideId) {
+        redisTemplate.opsForValue().set(DRIVER_RIDE_KEY_PREFIX + driverId, rideId,
+                LOCATION_TTL_MINUTES, TimeUnit.MINUTES);
+    }
+
+    /**
+     * Frees the driver for new matches after a ride completes or is cancelled.
+     */
+    public void clearDriverRide(String driverId) {
+        redisTemplate.delete(DRIVER_RIDE_KEY_PREFIX + driverId);
+    }
+
     public List<DriverLocation> findNearbyDrivers(double latitude, double longitude, double radiusKm) {
         Distance distance = new Distance(radiusKm, RedisGeoCommands.DistanceUnit.KILOMETERS);
         Circle circle = new Circle(new Point(longitude, latitude), distance);
@@ -97,10 +131,34 @@ public class DriverLocationService {
 
         List<DriverLocation> nearby = new ArrayList<>();
         if (results != null) {
+            long now = System.currentTimeMillis();
             for (GeoResult<RedisGeoCommands.GeoLocation<String>> result : results) {
                 String driverId = result.getContent().getName();
                 Map<Object, Object> details = redisTemplate.opsForHash()
                         .entries(DRIVER_HASH_KEY_PREFIX + driverId);
+
+                // Staleness guard: skip (and evict) drivers with no live heartbeat.
+                // Their details hash has expired or their last GPS update is too old,
+                // so they are no longer actually on the road.
+                if (details.isEmpty()) {
+                    redisTemplate.opsForGeo().remove(GEO_KEY, driverId);
+                    log.info("Evicted stale driver {} from matching (no heartbeat data)", driverId);
+                    continue;
+                }
+                String updatedAt = String.valueOf(details.get("updatedAt"));
+                try {
+                    long lastBeat = Long.parseLong(updatedAt);
+                    if (now - lastBeat > HEARTBEAT_STALE_MS) {
+                        redisTemplate.opsForGeo().remove(GEO_KEY, driverId);
+                        log.info("Evicted stale driver {} from matching (heartbeat {} ms old)",
+                                driverId, now - lastBeat);
+                        continue;
+                    }
+                } catch (NumberFormatException e) {
+                    redisTemplate.opsForGeo().remove(GEO_KEY, driverId);
+                    log.info("Evicted driver {} from matching (invalid heartbeat)", driverId);
+                    continue;
+                }
 
                 double distKm = result.getDistance().getValue();
                 Point coords = result.getContent().getPoint();

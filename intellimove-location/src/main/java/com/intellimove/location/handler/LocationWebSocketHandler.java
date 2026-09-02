@@ -32,6 +32,8 @@ public class LocationWebSocketHandler extends TextWebSocketHandler {
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
     private final Map<String, Set<String>> rideSubscriptions = new ConcurrentHashMap<>();
     private final Map<String, String> sessionToRide = new ConcurrentHashMap<>();
+    /** Sessions subscribed to their OWN personal channel (user ID from the authenticated JWT session). */
+    private final Map<String, Set<String>> userSubscriptions = new ConcurrentHashMap<>();
 
         public LocationWebSocketHandler(DriverLocationService driverLocationService,
                                     ObjectMapper objectMapper,
@@ -52,6 +54,7 @@ public class LocationWebSocketHandler extends TextWebSocketHandler {
         sessions.remove(session.getId());
         rideSubscriptions.values().forEach(set -> set.remove(session.getId()));
         sessionToRide.remove(session.getId());
+        userSubscriptions.values().forEach(set -> set.remove(session.getId()));
         log.info("WebSocket disconnected: {}", session.getId());
     }
 
@@ -64,6 +67,7 @@ public class LocationWebSocketHandler extends TextWebSocketHandler {
             switch (type) {
                 case "subscribe_ride" -> handleSubscribeRide(session, payload);
                 case "unsubscribe_ride" -> handleUnsubscribeRide(session, payload);
+                case "subscribe_user" -> handleSubscribeUser(session);
                 default -> {
                     // "driver_location" messages are no longer accepted via raw WS;
                     // drivers update location via the REST API which triggers broadcast.
@@ -109,6 +113,46 @@ public class LocationWebSocketHandler extends TextWebSocketHandler {
         if (rideId != null) {
             unsubscribe(session.getId(), rideId);
             sessionToRide.remove(session.getId());
+        }
+    }
+
+    /**
+     * Subscribe the session to its OWN personal user channel. The channel
+     * identity is ALWAYS derived from the JWT-authenticated session attributes
+     * — never from client-supplied payload — so a user can only ever receive
+     * events addressed to themselves (no cross-user leakage / IDOR).
+     */
+    private void handleSubscribeUser(WebSocketSession session) {
+        String userId = (String) session.getAttributes().get("userId");
+        if (userId == null) {
+            sendError(session, "UNAUTHENTICATED");
+            return;
+        }
+        userSubscriptions.computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet())
+                .add(session.getId());
+        log.debug("Session {} subscribed to own user channel {}", session.getId(), userId);
+    }
+
+    /**
+     * Push a message to every open session subscribed to the given user's
+     * personal channel (e.g. a driver being offered a ride request).
+     */
+    public void broadcastToUser(String userId, Map<String, Object> message) {
+        if (userId == null) {
+            return;
+        }
+        Set<String> subscriberIds = userSubscriptions.getOrDefault(userId, Set.of());
+        try {
+            String json = objectMapper.writeValueAsString(message);
+            for (String sessionId : subscriberIds) {
+                WebSocketSession session = sessions.get(sessionId);
+                if (session != null && session.isOpen()) {
+                    session.sendMessage(new TextMessage(json));
+                }
+            }
+            log.debug("Broadcast to user {} delivered to {} sessions", userId, subscriberIds.size());
+        } catch (Exception e) {
+            log.error("Error broadcasting to user {}: {}", userId, e.getMessage());
         }
     }
 

@@ -26,7 +26,8 @@ public class EventPublisher {
             "PaymentEvent", "payment-events",
             "NotificationEvent", "notification-events",
             "DriverStatusChangedEvent", "driver-events",
-            "SupportTicketEvent", "notification-events"
+            "SupportTicketEvent", "notification-events",
+            "UserRegisteredEvent", "user-events"
     );
 
     public EventPublisher(KafkaTemplate<String, Object> kafkaTemplate) {

@@ -15,6 +15,13 @@ export default defineConfig({
         target: 'ws://localhost:8085',
         ws: true,
       },
+      // Real geocoding via the key-free OpenStreetMap Nominatim service.
+      // Proxied so the browser never hits a third-party origin directly.
+      '/geocode': {
+        target: 'https://nominatim.openstreetmap.org',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/geocode/, ''),
+      },
     },
   },
 })

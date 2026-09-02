@@ -73,7 +73,6 @@ public class OutboxService {
     }
 
     @Scheduled(fixedDelayString = "${outbox.poll-interval-ms:5000}")
-    @Transactional
     public void processPendingEvents() {
         if (outboxRepository == null || eventPublisher == null) {
             return;
@@ -84,22 +83,44 @@ public class OutboxService {
                 try {
                     eventPublisher.publish(outboxEvent.getTopic(), outboxEvent.getMessageKey(),
                             objectMapper.readValue(outboxEvent.getPayload(), DomainEvent.class));
-                    outboxRepository.updateStatus(outboxEvent.getId(), OutboxStatus.PROCESSED, Instant.now());
+                    markProcessed(outboxEvent.getId());
                     log.debug("Outbox event {} published and marked PROCESSED", outboxEvent.getId());
                 } catch (Exception e) {
-                    log.error("Failed to publish outbox event {}: {}", outboxEvent.getId(), e.getMessage());
+                    log.error("Failed to publish outbox event {}: {} {}",
+                            outboxEvent.getId(), e.getClass().getSimpleName(), e.getMessage());
                     if (outboxEvent.getRetryCount() >= MAX_RETRIES - 1) {
-                        outboxRepository.incrementRetryAndMarkFailed(
-                                outboxEvent.getId(), OutboxStatus.FAILED);
+                        incrementRetryAndMark(outboxEvent.getId(), OutboxStatus.FAILED);
                         log.warn("Outbox event {} marked FAILED after {} retries", outboxEvent.getId(), outboxEvent.getRetryCount());
                     } else {
-                        outboxRepository.incrementRetryAndMarkFailed(
-                                outboxEvent.getId(), OutboxStatus.PENDING);
+                        incrementRetryAndMark(outboxEvent.getId(), OutboxStatus.PENDING);
                     }
                 }
             }
         } catch (Exception e) {
             log.error("Error processing outbox events: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Marks an outbox event as processed via entity save.
+     * SimpleJpaRepository.save carries its own @Transactional, so the update
+     * always runs inside a real transaction. The previous JPQL bulk-update
+     * queries failed on scheduled threads with TransactionRequiredException,
+     * which caused every event to be re-published forever.
+     */
+    private void markProcessed(UUID id) {
+        outboxRepository.findById(id).ifPresent(e -> {
+            e.setStatus(OutboxStatus.PROCESSED);
+            e.setProcessedAt(Instant.now());
+            outboxRepository.save(e);
+        });
+    }
+
+    private void incrementRetryAndMark(UUID id, OutboxStatus status) {
+        outboxRepository.findById(id).ifPresent(e -> {
+            e.setStatus(status);
+            e.setRetryCount(e.getRetryCount() + 1);
+            outboxRepository.save(e);
+        });
     }
 }

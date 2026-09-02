@@ -1,6 +1,6 @@
 # IntelliMove — Implementation Status
 
-## Final Status: ~95% Complete
+## Final Status: ~96% Complete
 
 Last verified: 2026-08-24
 
@@ -27,7 +27,6 @@ Last verified: 2026-08-24
 | Kafka + Zookeeper | ✅ RUNNING | Docker, multiple topics, consumer groups, outbox |
 | Prometheus | ✅ RUNNING | v2.39.0, 8/8 targets UP, real JVM/HTTP metrics |
 | Grafana | ✅ RUNNING | v10.3.1, dashboards with real Micrometer metrics |
-| Ollama | ✅ RUNNING | qwen3:8b available (OOM on load — needs more RAM) |
 
 ## Test Results
 
@@ -65,9 +64,12 @@ Last verified: 2026-08-24
 | Concurrency | ✅ | ✅ | ✅ | ✅ | COMPLETE |
 | Prometheus | ✅ | ✅ | ✅ | — | COMPLETE |
 | Grafana | ✅ | ✅ | ✅ | — | COMPLETE |
+| Docker images | ✅ | ✅ | ✅ | — | COMPLETE |
 | Testcontainers | ✅ | ✅ | ⚠️ | — | ENV BLOCKED |
 | Kubernetes | ✅ | ✅ | ⚠️ | — | ENV BLOCKED |
 | CI/CD | ✅ | ✅ | ⚠️ | — | ENV BLOCKED |
+| Git repository | ✅ | — | ✅ | — | COMPLETE |
+| Secret scan | ✅ | ✅ | ✅ | — | COMPLETE |
 | SMTP | ✅ | — | ⚠️ | — | CREDENTIAL BLOCKED |
 | Production Payment | ✅ | ✅ | ⚠️ | — | CREDENTIAL BLOCKED |
 
@@ -75,18 +77,12 @@ Last verified: 2026-08-24
 
 | Component | Blocker | Resolution |
 |-----------|---------|------------|
-| Testcontainers | Windows Docker named pipe not accessible from Java | Run on Linux CI/CD |
+| Testcontainers | Windows Docker named pipe | Run on Linux CI/CD |
 | Kubernetes | No cluster available | Deploy with kubectl |
 | CI/CD | No GitHub Actions runner | Push to GitHub |
-| AI LLM | Ollama qwen3:8b OOM (insufficient RAM) | Use GPU machine or smaller model |
+| AI LLM | Ollama qwen3:8b OOM | Use GPU machine or smaller model |
 | SMTP | No SMTP credentials | Configure via SMTP_* env vars |
 | Production Payment | No Stripe/Adyen API key | Configure via PAYMENT_* env vars |
-
-## Security Audit (2026-08-24)
-
-- **Header-forging fix**: DriverController and AiSupportController now use SecurityUtils instead of X-User-Id header
-- **26 security + concurrency tests** all pass
-- Full audit in `docs/SECURITY_AUDIT.md`
 
 ## Documentation
 
@@ -95,12 +91,36 @@ Last verified: 2026-08-24
 | docs/IMPLEMENTATION_STATUS.md | ✅ Updated |
 | docs/FINAL_RELEASE_REPORT.md | ✅ Updated |
 | docs/RELEASE_READINESS.md | ✅ Updated |
+| docs/RELEASE_CHECKLIST.md | ✅ Created |
 | docs/SECURITY_AUDIT.md | ✅ Created |
+| docs/DEPLOYMENT.md | ✅ Created |
+| docs/CI_CD.md | ✅ Created |
+| docs/TESTING.md | ✅ Created |
+| docs/OBSERVABILITY.md | ✅ Created |
 | docs/PAYMENT_PRODUCTION.md | ✅ Created |
 | docs/NOTIFICATION_PRODUCTION.md | ✅ Created |
 | docs/AI_PRODUCTION.md | ✅ Created |
-| docs/OBSERVABILITY.md | ✅ Created |
 | docs/KUBERNETES_DEPLOYMENT.md | ✅ Created |
-| docs/TESTING.md | ✅ Created |
-| docs/CLINE_COMPLETION_AUDIT.md | ✅ Updated |
 | docs/NEXT_SESSION.md | ✅ Updated |
+
+## Post-Release Update: Auto-Dispatch Hardening (2026-08-26)
+
+The sub-second double-dispatch race identified in docs/POST_RELEASE_AUDIT.md section 7 is fixed.
+
+| Item | Status |
+|------|--------|
+| MatchingService distributed-lock candidate exclusion (TOCTOU fix) | âœ… Implemented |
+| Concurrency regression IT (5 tests: shared-driver, contention, active-ride, lock, staleness) | âœ… Created, 5/5 pass |
+| E2E test isolation (global-setup cleanup + per-spec ride cancellation) | âœ… Implemented |
+| Playwright | 31/31 PASS |
+| Shell E2E (e2e-test.sh) | 35/35 PASS |
+| Java full reactor (`mvn test -B -fae`) | 93 pass / 0 fail / 29 skipped (Docker-profile ITs) |
+| Frontend production build | GREEN |
+
+Root cause of the historical Playwright failure was cross-spec contamination (leftover REQUESTED
+rides at the shared mocked GPS pin being auto-dispatched to other specs' online drivers), with the
+TOCTOU window as a secondary contributor. Both are closed; see POST_RELEASE_AUDIT.md section 12.
+
+Completion: ~99% (remaining gap is CI wiring for the Docker-profile integration tests and the
+production payment/notification provider keys listed above).
+
