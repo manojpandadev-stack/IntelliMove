@@ -12,8 +12,8 @@ import { test, expect, type Page } from '@playwright/test';
  */
 
 const GW = 'http://localhost:8080';
-const PICKUP = { latitude: 40.7128, longitude: -74.006 }; // same spot as ride-lifecycle spec
-const DROPOFF = { latitude: 40.758, longitude: -73.9851 };
+const PICKUP = { pickupLatitude: 40.7128, pickupLongitude: -74.006 }; // same spot as ride-lifecycle spec
+const DROPOFF = { dropoffLatitude: 40.758, dropoffLongitude: -73.9851 };
 
 interface Auth {
   token: string;
@@ -53,16 +53,60 @@ async function registerDriver(
   return auth;
 }
 
-async function goOnlineNear(page: Page, auth: Auth) {
+async function setDriverOnline(page: Page, auth: Auth) {
+  const r = await page.request.get(`${GW}/api/v1/drivers/user/${auth.userId}`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+  });
+  if (!r.ok()) return; // best-effort
+  const profile = (await r.json()).data;
+  await page.request.patch(`${GW}/api/v1/drivers/${profile.id}/status`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+    data: { status: 'ONLINE' },
+  });
+}
+
+async function goOnlineNear(page: Page, auth: Auth, meta: Record<string, string>) {
   // Redis GEO heartbeat (JWT user-ID contract) right next to the pickup point.
+  // Metadata steers the existing scoring: the higher-rated driver (A) is chosen
+  // deterministically over driver B when both sit at the same point.
   const loc = await page.request.post(`${GW}/api/v1/location/update`, {
     headers: { Authorization: `Bearer ${auth.token}` },
-    data: { latitude: PICKUP.latitude + 0.0001, longitude: PICKUP.longitude },
+    data: {
+      latitude: PICKUP.pickupLatitude + 0.0001,
+      longitude: PICKUP.pickupLongitude,
+      metadata: { ...meta, status: 'AVAILABLE' },
+    },
   });
   expect(loc.status()).toBeLessThan(300);
 }
 
+/**
+ * Take a test driver fully offline so they cannot be matched by later specs
+ * (Redis GEO entries persist; the matching filter excludes metadata status OFFLINE).
+ */
+async function takeDriverOffline(page: Page, auth: Auth) {
+  const r = await page.request.get(`${GW}/api/v1/drivers/user/${auth.userId}`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+  });
+  if (!r.ok()) return; // best-effort
+  const profile = (await r.json()).data;
+  await page.request.patch(`${GW}/api/v1/drivers/${profile.id}/status`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+    data: { status: 'OFFLINE' },
+  });
+  await page.request.post(`${GW}/api/v1/location/update`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+    data: {
+      latitude: PICKUP.pickupLatitude + 0.0001,
+      longitude: PICKUP.pickupLongitude,
+      metadata: { status: 'OFFLINE' },
+    },
+  });
+}
+
 async function bookRide(page: Page, customer: Auth, rideType: string): Promise<string> {
+  // Defensive: a previous test's leftover active ride makes booking 422.
+  await cancelAllActiveRides(page, customer);
   const r = await page.request.post(`${GW}/api/v1/rides`, {
     headers: { Authorization: `Bearer ${customer.token}` },
     data: {
@@ -97,7 +141,7 @@ async function cancelAllActiveRides(page: Page, customer: Auth) {
 async function loginAsDriver(page: Page, auth: Auth) {
   // Real GPS so the dashboard heartbeats the driver's live position like a device.
   await page.context().grantPermissions(['geolocation']);
-  await page.context().setGeolocation({ latitude: PICKUP.latitude + 0.0001, longitude: PICKUP.longitude });
+  await page.context().setGeolocation({ latitude: PICKUP.pickupLatitude + 0.0001, longitude: PICKUP.pickupLongitude });
   await page.addInitScript(([t, u]: any) => {
     localStorage.setItem('accessToken', t);
     localStorage.setItem('user', JSON.stringify(u));
@@ -113,6 +157,23 @@ let driverA: Auth;
 let driverB: Auth;
 
 test.describe('Driver ride request & acceptance', () => {
+  // Robustness against cascading failures: keep both test drivers matchable
+  // before every test and OFF the GEO/match pool after every test (even on
+  // failure) so later specs (ride-lifecycle) are never polluted.
+  test.beforeEach(async ({ page }) => {
+    if (driverA) {
+      await setDriverOnline(page, driverA);
+      await goOnlineNear(page, driverA, { rating: '5.0', totalTrips: '100', recentTrips: '0' });
+    }
+    if (driverB) {
+      await setDriverOnline(page, driverB);
+      await goOnlineNear(page, driverB, { rating: '4.6', totalTrips: '10', recentTrips: '0' });
+    }
+  });
+  test.afterEach(async ({ page }) => {
+    if (driverA) await takeDriverOffline(page, driverA);
+    if (driverB) await takeDriverOffline(page, driverB);
+  });
 
   test('setup: register customer + two online drivers near pickup', async ({ page }) => {
     ts = Date.now();
@@ -125,8 +186,8 @@ test.describe('Driver ride request & acceptance', () => {
     driverB = await registerDriver(page, {
       email: `dreq_db_${ts}@test.com`, password: 'TestPass123!', firstName: 'Bella', lastName: 'DriverB',
     }, ts);
-    await goOnlineNear(page, driverA);
-    await goOnlineNear(page, driverB);
+    await goOnlineNear(page, driverA, { rating: '5.0', totalTrips: '100', recentTrips: '0' });
+    await goOnlineNear(page, driverB, { rating: '4.6', totalTrips: '10', recentTrips: '0' });
   });
 
   test('driver sees real incoming request, accepts, starts and completes the trip', async ({ page }) => {
@@ -146,7 +207,7 @@ test.describe('Driver ride request & acceptance', () => {
     await expect(page.getByTestId('driver-request-card')).toHaveCount(1);
 
     // Only backend-provided data is displayed.
-    await expect(card).toContainText('COMFORT');
+    await expect(card).toContainText(/comfort/i);
     await expect(card).toContainText('Bowling Green, New York');
     await expect(card).toContainText('Times Square, New York');
     await expect(card.getByText('Cara Rider')).toBeVisible(); // real customer info from the user service
@@ -164,7 +225,9 @@ test.describe('Driver ride request & acceptance', () => {
     await page.getByTestId('accept-ride').click();
     const trip = page.getByTestId('driver-active-trip');
     await expect(trip).toBeVisible({ timeout: 20_000 });
-    await expect(trip.locator('.im-badge')).toHaveText(/DRIVER_ACCEPTED/i, { timeout: 20_000 });
+    // The incoming panel unmounts once the driver's ride flips to ACCEPTED.
+    await expect(page.getByTestId('driver-request-card')).toHaveCount(0, { timeout: 20_000 });
+    await expect(trip.locator('[data-status="DRIVER_ACCEPTED"]')).toBeVisible({ timeout: 20_000 });
     await expect(trip.getByTestId('trip-customer-name')).toContainText('Cara Rider');
     await expect(trip.getByTestId('navigate-action')).toBeVisible();
 
@@ -208,6 +271,10 @@ test.describe('Driver ride request & acceptance', () => {
       headers: { Authorization: `Bearer ${customer.token}` },
     });
     expect(custAttempt.status()).toBe(403);
+
+    // Never leave this ride dangling: if matching has not assigned it, it stays
+    // REQUESTED and would later be matched to another spec's online driver.
+    await cancelAllActiveRides(page, customer);
   });
 
   test('driver can reject; ride is reassignable, NOT cancelled', async ({ page }) => {
@@ -239,20 +306,25 @@ test.describe('Driver ride request & acceptance', () => {
 
   test('expired countdown disables acceptance (client-side, no fake backend expiry)', async ({ page }) => {
     test.setTimeout(120_000);
+    // Deterministic assignment: only driver A is matchable for this ride.
+    await takeDriverOffline(page, driverB);
     const rideId = await bookRide(page, customer, 'ECONOMY');
 
     await page.context().grantPermissions(['geolocation']);
-    await page.context().setGeolocation({ latitude: PICKUP.latitude + 0.0001, longitude: PICKUP.longitude });
-    // Freeze and control client time — the countdown is pure client behaviour.
-    await page.clock.install();
+    await page.context().setGeolocation({ latitude: PICKUP.pickupLatitude + 0.0001, longitude: PICKUP.pickupLongitude });
     await page.addInitScript(([t, u]: any) => {
       localStorage.setItem('accessToken', t);
       localStorage.setItem('user', JSON.stringify(u));
     }, [driverA.token, { id: driverA.userId, role: 'DRIVER' }] as any);
     await page.goto('http://localhost:5173/driver');
 
+    // Wait for the REAL delivery first (frozen timers would disable the REST
+    // poll fallback and make delivery race on the WebSocket push alone).
     const card = page.getByTestId('driver-request-card');
     await expect(card).toBeVisible({ timeout: 60_000 });
+
+    // Freeze and control client time — the countdown is pure client behaviour.
+    await page.clock.install();
     await expect(page.getByTestId('request-countdown')).toBeVisible();
 
     // Fast-forward past the acceptance window.
@@ -296,8 +368,11 @@ test.describe('Driver ride request & acceptance', () => {
     expect(overflow).toBe(false);
   });
 
-  test('cleanup: cancel leftover rides for the test customer', async ({ page }) => {
+  test('cleanup: cancel leftover rides and take test drivers offline', async ({ page }) => {
     await cancelAllActiveRides(page, customer);
+    // Prevent Adam/Bella from being matched by later specs (e.g. ride-lifecycle).
+    await takeDriverOffline(page, driverA);
+    await takeDriverOffline(page, driverB);
   });
 });
 

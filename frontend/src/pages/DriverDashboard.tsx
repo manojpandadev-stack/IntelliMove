@@ -264,12 +264,13 @@ function IncomingRequestPanel({ ride }: { ride: Ride }) {
 function ActiveTripCard({ ride }: { ride: Ride }) {
   const queryClient = useQueryClient();
   const action = useDriverRideAction();
-  const { data: eta } = useRideEta(ride.id);
-  const { data: customerUser } = useGetUser(ride.customerId);
   const isIncoming = ride.status === 'DRIVER_ASSIGNED';
   // The backend has no separate "arrived" action/status for drivers — no
   // Arrived button is invented; Start trip covers the transition.
   const isPreTrip = ride.status === 'DRIVER_ACCEPTED' || ride.status === 'DRIVER_ARRIVING';
+  // Live pickup ETA is only meaningful while the driver heads to the pickup.
+  const { data: eta } = useRideEta(isPreTrip ? ride.id : '');
+  const { data: customerUser } = useGetUser(ride.customerId);
 
   const run = (act: 'start' | 'complete') =>
     action.mutate(
