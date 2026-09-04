@@ -105,6 +105,33 @@ Controlled tool-calling architecture:
 - `getRevenueStatistics()` — financial metrics
 - `searchIncidents()` — operational alerts
 
+## Live Demo / Screenshots
+
+A complete ride-hailing journey was verified **end-to-end against the real local
+Docker Compose stack** (all 16 containers healthy). A customer and a driver both
+registered and logged in through the live UI, and ride matching and the full ride
+lifecycle ran against the live Kafka/Redis backend (no mocked ride data). The
+screenshots below are real captures from that running instance.
+
+**Demo workflow:** Register/Login → Fare Estimate → Request Ride → Driver Matching → Driver Accept → Live Location/ETA → Complete Ride → Payment/Notification → Admin/AI.
+
+| Step | Screenshot |
+|------|------------|
+| Login / registration screen | [docs/screenshots/01-login-register.png](docs/screenshots/01-login-register.png) |
+| Customer dashboard with live map | [docs/screenshots/02-customer-dashboard-map.png](docs/screenshots/02-customer-dashboard-map.png) |
+| Ride category fare cards (Economy / Comfort / Premium / XL) | [docs/screenshots/03-ride-categories-fares.png](docs/screenshots/03-ride-categories-fares.png) |
+| Active ride with driver marker + live ETA | [docs/screenshots/04-active-ride-live-eta.png](docs/screenshots/04-active-ride-live-eta.png) |
+| Driver receives the incoming ride request | [docs/screenshots/05-driver-ride-request.png](docs/screenshots/05-driver-ride-request.png) |
+| Driver accepts the ride | [docs/screenshots/05b-driver-accepted.png](docs/screenshots/05b-driver-accepted.png) |
+| Admin / AI support console | [docs/screenshots/06-admin-ai-support.png](docs/screenshots/06-admin-ai-support.png) |
+| Payment sandbox record | [docs/screenshots/07-payment-record.png](docs/screenshots/07-payment-record.png) |
+
+> **Notes:** Payment uses the **sandbox provider** (simulated success/failure; no
+> production gateway credentials — see [docs/PAYMENT_PRODUCTION.md](docs/PAYMENT_PRODUCTION.md)).
+> The AI assistant runs in **keyword-routing mode by default** with an optional
+> pluggable LLM — no LLM required (see [docs/AI_PRODUCTION.md](docs/AI_PRODUCTION.md)).
+> These captures are from local development and are illustrative of functionality.
+
 ## Prerequisites
 
 - Java 21

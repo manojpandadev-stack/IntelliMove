@@ -103,6 +103,13 @@ services:
       PAYMENT_SERVICE_PORT: 8086
       NOTIFICATION_SERVICE_PORT: 8087
       AI_OPS_SERVICE_PORT: 8088
+      # Route overrides: the packaged gateway routes to http://localhost:<port>
+      # (designed for Docker Desktop host networking). On a standard bridge
+      # network the routes must target the compose service DNS names instead.
+      # SPRING_APPLICATION_JSON is the only env mechanism that can replace the
+      # whole routes list; it must define every route completely (id, uri,
+      # predicates, filters) or Spring binding rejects the partial indexes.
+      SPRING_APPLICATION_JSON: '{"spring":{"cloud":{"gateway":{"routes":[{"id":"auth-service","uri":"http://auth-service:8081","predicates":["Path=/api/v1/auth/**"],"filters":[{"name":"RequestRateLimiter","args":{"redis-rate-limiter.replenishRate":"10","redis-rate-limiter.burstCapacity":"20"}}]},{"id":"user-service","uri":"http://user-service:8082","predicates":["Path=/api/v1/users/**"],"filters":[{"name":"StripPrefix","args":{"parts":"0"}},{"name":"RequestRateLimiter","args":{"redis-rate-limiter.replenishRate":"30","redis-rate-limiter.burstCapacity":"60"}}]},{"id":"driver-service","uri":"http://driver-service:8083","predicates":["Path=/api/v1/drivers/**"],"filters":[{"name":"StripPrefix","args":{"parts":"0"}}]},{"id":"ride-service","uri":"http://ride-service:8084","predicates":["Path=/api/v1/rides/**"],"filters":[{"name":"StripPrefix","args":{"parts":"0"}}]},{"id":"location-service","uri":"http://location-service:8085","predicates":["Path=/api/v1/location/**"],"filters":[{"name":"StripPrefix","args":{"parts":"0"}}]},{"id":"payment-service","uri":"http://payment-service:8086","predicates":["Path=/api/v1/payments/**"],"filters":[{"name":"StripPrefix","args":{"parts":"0"}}]},{"id":"notification-service","uri":"http://notification-service:8087","predicates":["Path=/api/v1/notifications/**"],"filters":[{"name":"StripPrefix","args":{"parts":"0"}}]},{"id":"ai-ops-service","uri":"http://ai-ops-service:8088","predicates":["Path=/api/v1/ai/**"],"filters":[{"name":"StripPrefix","args":{"parts":"0"}}],"metadata":{"response-timeout":"150s","connect-timeout":"5000"}}]}}}}'
     depends_on:
       redis:
         condition: service_healthy
@@ -158,6 +165,10 @@ services:
       POSTGRES_DB: intellimove
       POSTGRES_USER: intellimove
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_postgres}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:29092
       JWT_SECRET: ${JWT_SECRET:-changeme_jwt_secret_min_32_chars_long!!}
     depends_on:
@@ -185,6 +196,10 @@ services:
       POSTGRES_DB: intellimove
       POSTGRES_USER: intellimove
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_postgres}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:29092
       JWT_SECRET: ${JWT_SECRET:-changeme_jwt_secret_min_32_chars_long!!}
     depends_on:
@@ -241,6 +256,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:29092
+      RIDE_SERVICE_URL: http://ride-service:8084
       JWT_SECRET: ${JWT_SECRET:-changeme_jwt_secret_min_32_chars_long!!}
     depends_on:
       redis:
@@ -267,6 +283,10 @@ services:
       POSTGRES_DB: intellimove
       POSTGRES_USER: intellimove
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_postgres}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:29092
       JWT_SECRET: ${JWT_SECRET:-changeme_jwt_secret_min_32_chars_long!!}
     depends_on:
@@ -294,6 +314,10 @@ services:
       POSTGRES_DB: intellimove
       POSTGRES_USER: intellimove
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_postgres}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:29092
       JWT_SECRET: ${JWT_SECRET:-changeme_jwt_secret_min_32_chars_long!!}
     depends_on:
